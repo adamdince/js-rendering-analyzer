@@ -75,6 +75,11 @@ class AdvancedJSAnalyzer {
   }
 
   async analyzeBrowser(browserType, browserName) {
+    // Use enhanced evasion if explicitly requested
+    if (process.env.ENHANCED_EVASION === 'true') {
+      return await this.analyzeWithEnhancedEvasion(browserType, browserName);
+    }
+    
     // For extremely protected sites, try multiple approaches
     if (this.isExtremelyProtected()) {
       return await this.analyzeProtectedSite(browserType, browserName);
@@ -253,16 +258,8 @@ class AdvancedJSAnalyzer {
   }
 
   isExtremelyProtected() {
-    const extremelyProtectedDomains = [
-      'anthem.com',
-      'bankofamerica.com',
-      'wellsfargo.com',
-      'jpmorgan.com'
-    ];
-    
-    return extremelyProtectedDomains.some(domain => 
-      this.targetUrl.toLowerCase().includes(domain)
-    );
+    // Only use if FORCE_PROTECTED_MODE is set
+    return process.env.FORCE_PROTECTED_MODE === 'true';
   }
 
   async analyzeProtectedSite(browserType, browserName) {
@@ -336,7 +333,258 @@ class AdvancedJSAnalyzer {
     };
   }
 
-  shouldUseStealth() {
+  async analyzeWithEnhancedEvasion(browserType, browserName) {
+    console.log(`  🥷 Using enhanced evasion techniques...`);
+    
+    const launchOptions = {
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-features=VizDisplayCompositor',
+        '--disable-web-security',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--disable-renderer-backgrounding',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-client-side-phishing-detection',
+        '--disable-sync',
+        '--disable-default-apps',
+        '--hide-scrollbars',
+        '--mute-audio',
+        '--no-default-browser-check',
+        '--no-pings',
+        '--disable-extensions-http-throttling',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-permissions-api',
+        '--force-device-scale-factor=1',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-field-trial-config',
+        '--disable-back-forward-cache',
+        '--disable-background-networking',
+        '--enable-automation=false',
+        '--password-store=basic',
+        '--use-mock-keychain'
+      ]
+    };
+
+    const browser = await browserType.launch(launchOptions);
+
+    try {
+      const contextOptions = {
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        viewport: { width: 1366, height: 768 },
+        locale: 'en-US',
+        timezoneId: 'America/New_York',
+        permissions: [],
+        extraHTTPHeaders: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'DNT': '1',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Cache-Control': 'max-age=0',
+          'sec-ch-ua': '"Chromium";v="120", "Not_A Brand";v="24", "Google Chrome";v="120"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"Windows"'
+        }
+      };
+
+      const context = await browser.newContext(contextOptions);
+      
+      // Apply enhanced stealth for Anthem
+      await this.applyAnthemStealth(context);
+      
+      const page = await context.newPage();
+
+      // Simulate human behavior
+      await this.simulateHumanBehavior(page);
+
+      // Navigate with multiple fallbacks
+      console.log(`  📄 Fetching page with enhanced evasion...`);
+      const response = await this.navigateWithFallbacks(page);
+      
+      // Check if we got blocked
+      if (await this.detectBlocking(page)) {
+        throw new Error('Site detected automation and blocked access');
+      }
+      
+      // Wait for JavaScript rendering with human-like delays
+      console.log(`  ⚡ Waiting for JavaScript execution...`);
+      await page.waitForTimeout(2000 + Math.random() * 3000); // Random 2-5 second delay
+      
+      try {
+        await page.waitForLoadState('networkidle', { timeout: 15000 });
+      } catch (e) {
+        console.log(`  ⏰ Network timeout - continuing...`);
+      }
+      
+      await page.waitForTimeout(2000);
+
+      // Get final rendered content
+      const rawHtml = await response.text();
+      const renderedHtml = await page.content();
+      
+      // Take screenshot
+      console.log(`  📸 Taking screenshot...`);
+      const screenshotPath = `screenshots/${browserName}-anthem-${Date.now()}.png`;
+      await page.screenshot({ 
+        path: screenshotPath,
+        fullPage: true,
+        timeout: 10000
+      });
+
+      // Analyze content
+      const analysis = await this.analyzeContent(page, rawHtml, renderedHtml);
+      
+      // Get performance metrics
+      const metrics = await this.getPerformanceMetrics(page);
+      
+      await context.close();
+      
+      return {
+        ...analysis,
+        performanceMetrics: metrics,
+        screenshotPath: screenshotPath,
+        statusCode: response.status(),
+        timestamp: new Date().toISOString(),
+        status: 'success',
+        evasionUsed: 'enhanced_anthem'
+      };
+      
+    } finally {
+      await browser.close();
+    }
+  }
+
+  async applyAnthemStealth(context) {
+    await context.addInitScript(() => {
+      // Aggressive removal of automation indicators
+      delete Object.getPrototypeOf(navigator).webdriver;
+      delete navigator.__proto__.webdriver;
+      delete navigator.webdriver;
+      
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+        set: () => {},
+        configurable: true,
+        enumerable: false
+      });
+      
+      // Remove ALL Playwright indicators
+      delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+      delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+      delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+      delete window.cdc_adoQpoasnfa76pfcZLmcfl_JSON;
+      delete window.cdc_adoQpoasnfa76pfcZLmcfl_Object;
+      delete window.cdc_adoQpoasnfa76pfcZLmcfl_Proxy;
+      delete window.cdc_adoQpoasnfa76pfcZLmcfl_Reflect;
+      
+      // Override window dimensions
+      Object.defineProperty(window, 'outerHeight', {
+        get: () => window.innerHeight,
+      });
+      Object.defineProperty(window, 'outerWidth', {
+        get: () => window.innerWidth,
+      });
+      
+      // Mock realistic plugins
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [
+          {
+            0: { type: 'application/x-google-chrome-pdf', suffixes: 'pdf', description: 'Portable Document Format' },
+            description: 'Portable Document Format',
+            filename: 'internal-pdf-viewer',
+            length: 1,
+            name: 'Chrome PDF Plugin'
+          }
+        ]
+      });
+      
+      // Override WebGL fingerprinting
+      const getParameter = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function(parameter) {
+        if (parameter === 37445) return 'Intel Inc.';
+        if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+        return getParameter.call(this, parameter);
+      };
+      
+      // Add chrome object
+      window.chrome = { runtime: {} };
+      
+      // Mock connection
+      Object.defineProperty(navigator, 'connection', {
+        get: () => ({
+          effectiveType: '4g',
+          rtt: 50,
+          downlink: 2.0
+        })
+      });
+    });
+  }
+
+  async simulateHumanBehavior(page) {
+    // Random mouse movements
+    await page.mouse.move(100 + Math.random() * 100, 100 + Math.random() * 100);
+    await page.waitForTimeout(500 + Math.random() * 1000);
+    
+    await page.mouse.move(200 + Math.random() * 100, 200 + Math.random() * 100);
+    await page.waitForTimeout(300 + Math.random() * 700);
+  }
+
+  async navigateWithFallbacks(page) {
+    const strategies = [
+      { waitUntil: 'domcontentloaded', timeout: 30000 },
+      { waitUntil: 'load', timeout: 45000 }
+    ];
+    
+    for (const strategy of strategies) {
+      try {
+        const response = await page.goto(this.targetUrl, strategy);
+        if (response && response.status() < 400) {
+          return response;
+        }
+      } catch (error) {
+        console.log(`  ⚠️ Navigation failed with ${strategy.waitUntil}: ${error.message}`);
+        continue;
+      }
+    }
+    
+    throw new Error('All navigation strategies failed');
+  }
+
+  async detectBlocking(page) {
+    try {
+      const indicators = await page.evaluate(() => {
+        const title = document.title.toLowerCase();
+        const bodyText = document.body ? document.body.innerText.toLowerCase() : '';
+        
+        const blockingKeywords = [
+          'access denied', 'blocked', 'security check', 'captcha', 
+          'robot', 'automated', 'suspicious activity', 'ray id'
+        ];
+        
+        return blockingKeywords.some(keyword => 
+          title.includes(keyword) || bodyText.includes(keyword)
+        ) || !document.body || document.body.children.length === 0;
+      });
+      
+      return indicators;
+    } catch (error) {
+      return true;
+    }
+  }
     const protectedDomains = [
       'anthem.com',
       'bankofamerica.com',
@@ -449,6 +697,9 @@ class AdvancedJSAnalyzer {
       };
     }).catch(() => ({ totalElements: 0, scriptTags: 0, loadingElements: 0 }));
 
+    // NEW: Analyze what specific content was added by JS
+    const jsRenderedContent = await this.analyzeJSRenderedContent(cleanRaw, cleanRendered, page);
+
     return {
       rawHtmlLength: rawHtml.length,
       renderedHtmlLength: renderedHtml.length,
@@ -458,8 +709,248 @@ class AdvancedJSAnalyzer {
       frameworks: frameworks,
       dynamicElements: dynamicElements,
       rawContentLength: cleanRaw.length,
-      renderedContentLength: cleanRendered.length
+      renderedContentLength: cleanRendered.length,
+      jsRenderedContent: jsRenderedContent
     };
+  }
+
+  async analyzeJSRenderedContent(rawText, renderedText, page) {
+    try {
+      // Get detailed content analysis
+      const contentAnalysis = await page.evaluate(() => {
+        // Find elements that likely contain meaningful content
+        const contentSelectors = [
+          'main', 'article', '.content', '#content', '.main-content',
+          'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+          'p', '.text', '.description', '.summary',
+          '.card', '.item', '.product', '.service',
+          'nav', '.navigation', '.menu',
+          '.header', '.hero', '.banner',
+          'form', '.form', 'input', 'button',
+          '.list', 'ul', 'ol', 'li',
+          'table', 'tbody', 'tr', 'td'
+        ];
+
+        const analysis = {
+          contentTypes: {},
+          criticalElements: [],
+          navigationElements: [],
+          interactiveElements: [],
+          dataElements: [],
+          missingInRaw: []
+        };
+
+        // Check each content type
+        contentSelectors.forEach(selector => {
+          const elements = document.querySelectorAll(selector);
+          if (elements.length > 0) {
+            const elementType = selector.replace(/[.#]/, '');
+            analysis.contentTypes[elementType] = {
+              count: elements.length,
+              totalText: Array.from(elements).reduce((sum, el) => sum + (el.innerText || '').length, 0),
+              examples: Array.from(elements).slice(0, 3).map(el => {
+                const text = (el.innerText || '').trim().substring(0, 100);
+                return text ? text + (text.length === 100 ? '...' : '') : '[No text content]';
+              }).filter(text => text !== '[No text content]')
+            };
+          }
+        });
+
+        // Identify critical missing content
+        const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+        const paragraphs = document.querySelectorAll('p');
+        const navigation = document.querySelectorAll('nav, .nav, .navigation, .menu');
+        const forms = document.querySelectorAll('form, input, button');
+        const lists = document.querySelectorAll('ul, ol, .list');
+
+        if (headings.length > 0) {
+          analysis.criticalElements.push({
+            type: 'Headings',
+            count: headings.length,
+            examples: Array.from(headings).slice(0, 3).map(h => h.innerText.trim().substring(0, 60))
+          });
+        }
+
+        if (paragraphs.length > 0) {
+          analysis.criticalElements.push({
+            type: 'Paragraphs',
+            count: paragraphs.length,
+            totalChars: Array.from(paragraphs).reduce((sum, p) => sum + p.innerText.length, 0)
+          });
+        }
+
+        if (navigation.length > 0) {
+          analysis.navigationElements.push({
+            type: 'Navigation',
+            count: navigation.length,
+            examples: Array.from(navigation).slice(0, 2).map(nav => {
+              const links = nav.querySelectorAll('a');
+              return `${links.length} links: ${Array.from(links).slice(0, 3).map(a => a.innerText.trim()).join(', ')}`;
+            })
+          });
+        }
+
+        if (forms.length > 0) {
+          analysis.interactiveElements.push({
+            type: 'Forms & Inputs',
+            count: forms.length,
+            examples: Array.from(forms).slice(0, 3).map(f => {
+              if (f.tagName === 'FORM') {
+                const inputs = f.querySelectorAll('input, select, textarea');
+                return `Form with ${inputs.length} inputs`;
+              }
+              return f.tagName.toLowerCase() + (f.type ? `[${f.type}]` : '');
+            })
+          });
+        }
+
+        // Check for data-rich content
+        const tables = document.querySelectorAll('table');
+        const dataLists = document.querySelectorAll('[data-*], .data, .results, .items');
+        
+        if (tables.length > 0) {
+          analysis.dataElements.push({
+            type: 'Tables',
+            count: tables.length,
+            examples: Array.from(tables).slice(0, 2).map(table => {
+              const rows = table.querySelectorAll('tr').length;
+              const cols = table.querySelector('tr') ? table.querySelector('tr').querySelectorAll('td, th').length : 0;
+              return `${rows} rows × ${cols} columns`;
+            })
+          });
+        }
+
+        return analysis;
+      });
+
+      // Compare raw vs rendered to find what's missing
+      const missingContent = this.identifyMissingContent(rawText, renderedText, contentAnalysis);
+
+      return {
+        ...contentAnalysis,
+        summary: this.summarizeJSContent(contentAnalysis, missingContent),
+        missingFromRaw: missingContent,
+        recommendations: this.generateContentRecommendations(contentAnalysis, missingContent)
+      };
+
+    } catch (error) {
+      return {
+        error: error.message,
+        summary: 'Unable to analyze JS-rendered content',
+        recommendations: ['Manual inspection required']
+      };
+    }
+  }
+
+  identifyMissingContent(rawText, renderedText, contentAnalysis) {
+    const missing = [];
+    
+    // Check if major content types are missing from raw
+    if (contentAnalysis.criticalElements.length > 0) {
+      contentAnalysis.criticalElements.forEach(element => {
+        if (element.type === 'Headings' && element.examples) {
+          const missingHeadings = element.examples.filter(heading => 
+            !rawText.toLowerCase().includes(heading.toLowerCase().substring(0, 20))
+          );
+          if (missingHeadings.length > 0) {
+            missing.push({
+              type: 'Headings',
+              count: missingHeadings.length,
+              examples: missingHeadings.slice(0, 2),
+              impact: 'High - Important for content structure and SEO'
+            });
+          }
+        }
+      });
+    }
+
+    // Check navigation
+    if (contentAnalysis.navigationElements.length > 0) {
+      missing.push({
+        type: 'Navigation',
+        count: contentAnalysis.navigationElements.length,
+        impact: 'High - Critical for site usability and crawling'
+      });
+    }
+
+    // Check interactive elements
+    if (contentAnalysis.interactiveElements.length > 0) {
+      missing.push({
+        type: 'Interactive Elements',
+        count: contentAnalysis.interactiveElements.reduce((sum, el) => sum + el.count, 0),
+        impact: 'Medium - Important for user functionality'
+      });
+    }
+
+    // Check data elements
+    if (contentAnalysis.dataElements.length > 0) {
+      missing.push({
+        type: 'Data Tables/Lists',
+        count: contentAnalysis.dataElements.reduce((sum, el) => sum + el.count, 0),
+        impact: 'High - Important structured data'
+      });
+    }
+
+    return missing;
+  }
+
+  summarizeJSContent(contentAnalysis, missingContent) {
+    const totalElements = Object.values(contentAnalysis.contentTypes).reduce((sum, type) => sum + type.count, 0);
+    const totalText = Object.values(contentAnalysis.contentTypes).reduce((sum, type) => sum + type.totalText, 0);
+    
+    if (totalElements === 0) {
+      return 'No significant content rendered by JavaScript';
+    }
+
+    const primaryContent = [];
+    if (contentAnalysis.criticalElements.length > 0) {
+      primaryContent.push(`${contentAnalysis.criticalElements.length} critical content types`);
+    }
+    if (contentAnalysis.navigationElements.length > 0) {
+      primaryContent.push('navigation menus');
+    }
+    if (contentAnalysis.interactiveElements.length > 0) {
+      primaryContent.push('interactive elements');
+    }
+    if (contentAnalysis.dataElements.length > 0) {
+      primaryContent.push('data tables/lists');
+    }
+
+    return `JavaScript renders: ${primaryContent.join(', ')} (${totalElements} elements, ~${Math.round(totalText/1000)}k characters)`;
+  }
+
+  generateContentRecommendations(contentAnalysis, missingContent) {
+    const recommendations = [];
+    
+    const highImpactMissing = missingContent.filter(item => item.impact.startsWith('High'));
+    
+    if (highImpactMissing.length > 0) {
+      recommendations.push('🚨 Critical content missing from raw HTML - JS rendering essential');
+      
+      highImpactMissing.forEach(item => {
+        switch (item.type) {
+          case 'Headings':
+            recommendations.push('📝 Page structure (headings) only available after JS execution');
+            break;
+          case 'Navigation':
+            recommendations.push('🧭 Navigation menus require JavaScript - impacts crawlability');
+            break;
+          case 'Data Tables/Lists':
+            recommendations.push('📊 Data content is dynamically loaded - use browser automation');
+            break;
+        }
+      });
+    }
+
+    if (contentAnalysis.interactiveElements.length > 0) {
+      recommendations.push('🔧 Interactive elements detected - functionality requires JS');
+    }
+
+    if (contentAnalysis.criticalElements.length === 0 && contentAnalysis.navigationElements.length === 0) {
+      recommendations.push('✅ Minimal JS dependency - content mostly available in raw HTML');
+    }
+
+    return recommendations.length > 0 ? recommendations : ['Content analysis completed'];
   }
 
   cleanHtml(html) {
@@ -664,6 +1155,10 @@ class AdvancedJSAnalyzer {
   generateTextSummary() {
     const { summary, recommendations } = this.results;
     
+    // Get JS content analysis from the first successful browser
+    const successfulBrowser = Object.values(this.results.browsers).find(b => b.status === 'success');
+    const jsContent = successfulBrowser?.jsRenderedContent;
+    
     return `
 🔍 JavaScript Rendering Analysis Report
 =====================================
@@ -680,6 +1175,26 @@ Average Content Change: ${summary.averageContentChange}%
 Frameworks Detected: ${summary.frameworksDetected.join(', ') || 'None'}
 Cross-Browser Consistency: ${summary.crossBrowserConsistency}
 Analysis Confidence: ${summary.analysisConfidence}%
+
+${jsContent ? `
+🎯 JAVASCRIPT CONTENT ANALYSIS
+------------------------------
+${jsContent.summary || 'No additional content details available'}
+
+${jsContent.missingFromRaw && jsContent.missingFromRaw.length > 0 ? `
+CONTENT MISSING FROM RAW HTML:
+${jsContent.missingFromRaw.map(item => `• ${item.type}: ${item.count} elements (${item.impact})`).join('\n')}
+
+SPECIFIC CONTENT RENDERED BY JS:
+${jsContent.criticalElements ? jsContent.criticalElements.map(el => `• ${el.type}: ${el.count} elements${el.examples ? ` (e.g., "${el.examples[0]}")` : ''}`).join('\n') : 'No critical elements detected'}
+${jsContent.navigationElements && jsContent.navigationElements.length > 0 ? `• Navigation: ${jsContent.navigationElements[0].examples || 'Multiple navigation elements'}` : ''}
+${jsContent.interactiveElements && jsContent.interactiveElements.length > 0 ? `• Interactive: ${jsContent.interactiveElements[0].examples ? jsContent.interactiveElements[0].examples.join(', ') : 'Forms and inputs'}` : ''}
+${jsContent.dataElements && jsContent.dataElements.length > 0 ? `• Data: ${jsContent.dataElements[0].examples ? jsContent.dataElements[0].examples.join(', ') : 'Tables and structured data'}` : ''}
+` : ''}
+
+JS-SPECIFIC RECOMMENDATIONS:
+${jsContent && jsContent.recommendations ? jsContent.recommendations.map(r => `• ${r}`).join('\n') : 'No specific content recommendations available'}
+` : ''}
 
 🎯 RECOMMENDATIONS
 ------------------
@@ -733,6 +1248,7 @@ Full Report: analysis-report.json
 
       const { summary, browsers } = this.results;
       const chromiumResults = browsers.chromium || {};
+      const jsContent = chromiumResults.jsRenderedContent || {};
 
       // Safely handle all potential undefined values
       const recommendations = Array.isArray(this.results.recommendations) ? this.results.recommendations : [];
@@ -744,6 +1260,7 @@ Full Report: analysis-report.json
 
       const githubUrl = `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
 
+      // Enhanced data with JS content analysis
       const updateData = [
         [
           chromiumResults.rawHtmlLength || 0,
@@ -754,15 +1271,29 @@ Full Report: analysis-report.json
           `Complete (${this.analysisType})`,
           recommendationText,
           githubUrl,
-          new Date().toISOString()
+          new Date().toISOString(),
+          // New JS content columns
+          jsContent.summary || 'No JS content analysis',
+          jsContent.missingFromRaw ? jsContent.missingFromRaw.filter(item => item.impact.startsWith('High')).length : 0,
+          jsContent.navigationElements && jsContent.navigationElements.length > 0 ? 'Yes' : 'No',
+          jsContent.criticalElements ? jsContent.criticalElements.some(el => el.type === 'Headings') ? 'Yes' : 'No' : 'No',
+          jsContent.interactiveElements ? jsContent.interactiveElements.reduce((sum, el) => sum + el.count, 0) : 0,
+          jsContent.dataElements ? jsContent.dataElements.reduce((sum, el) => sum + el.count, 0) : 0,
+          jsContent.missingFromRaw && jsContent.missingFromRaw.some(item => item.impact.startsWith('High')) ? 'High' : 
+            jsContent.missingFromRaw && jsContent.missingFromRaw.some(item => item.impact.startsWith('Medium')) ? 'Medium' : 'Low',
+          jsContent.criticalElements && jsContent.criticalElements.length > 0 ? 
+            jsContent.criticalElements[0].examples ? jsContent.criticalElements[0].examples[0] : 'Content detected' : 'None',
+          chromiumResults.evasionUsed || 'standard',
+          chromiumResults.status === 'protected_site' || chromiumResults.status === 'failed' ? 'Yes' : 'No',
+          summary.analysisConfidence || 100
         ]
       ];
 
-      console.log(`📝 Updating range B${rowNumber}:J${rowNumber} with data:`, JSON.stringify(updateData[0]));
+      console.log(`📝 Updating range B${rowNumber}:U${rowNumber} with enhanced data`);
 
       await sheets.spreadsheets.values.update({
         spreadsheetId: sheetId,
-        range: `B${rowNumber}:J${rowNumber}`,
+        range: `B${rowNumber}:U${rowNumber}`,
         valueInputOption: 'RAW',
         requestBody: {
           values: updateData
