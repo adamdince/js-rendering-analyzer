@@ -1,29 +1,12 @@
 {
   "name": "js-rendering-analyzer",
-  "version": "2.0.0",
-  "description": "Advanced JavaScript rendering analysis with Playwright",
-  "main": "src/analyzer.js",
+  "version": "1.0.0",
+  "description": "JavaScript rendering analysis with Playwright",
+  "main": "analyzer.js",
   "scripts": {
-    "start": "node src/analyzer.js",
-    "test": "node src/analyzer.js",
-    "analyze": "node src/analyzer.js"
+    "start": "node analyzer.js"
   },
   "dependencies": {
-    "playwright": "^1.54.0",
-    "googleapis": "^132.0.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/YOUR_USERNAME/js-rendering-analyzer.git"
-  },
-  "keywords": [
-    "playwright",
-    "javascript",
-    "web-scraping",
-    "automation",
-    "rendering-analysis"
-  ]
+    "playwright": "^1.54.0"
+  }
 }
