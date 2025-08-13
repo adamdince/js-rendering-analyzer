@@ -694,15 +694,22 @@ class AdvancedJSAnalyzer {
   }
 
   async analyzeContent(page, rawHtml, renderedHtml) {
+    console.log(`  📊 Starting content analysis...`);
     const cleanRaw = this.cleanHtml(rawHtml);
     const cleanRendered = this.cleanHtml(renderedHtml);
+    
+    console.log(`  📏 Clean raw length: ${cleanRaw.length}`);
+    console.log(`  📏 Clean rendered length: ${cleanRendered.length}`);
     
     const difference = cleanRendered.length - cleanRaw.length;
     const percentChange = cleanRaw.length > 0 ? 
       Math.round((difference / cleanRaw.length) * 100) : 0;
     
+    console.log(`  📊 Content difference: ${difference} characters (${percentChange}%)`);
+    
     // Detect frameworks
     const frameworks = await this.detectFrameworks(renderedHtml, page);
+    console.log(`  🎭 Frameworks detected: ${frameworks.join(', ') || 'None'}`);
     
     // Get dynamic elements info
     const dynamicElements = await page.evaluate(() => {
@@ -712,6 +719,8 @@ class AdvancedJSAnalyzer {
         loadingElements: document.querySelectorAll('[data-loading], .loading, .spinner, .skeleton').length
       };
     }).catch(() => ({ totalElements: 0, scriptTags: 0, loadingElements: 0 }));
+
+    console.log(`  🧮 Dynamic elements: ${dynamicElements.totalElements} total, ${dynamicElements.scriptTags} scripts`);
 
     // NEW: Analyze what specific content was added by JS
     const jsRenderedContent = await this.analyzeJSRenderedContent(cleanRaw, cleanRendered, page);
@@ -731,8 +740,13 @@ class AdvancedJSAnalyzer {
   }
 
   async analyzeJSRenderedContent(rawText, renderedText, page) {
+    console.log(`  🔍 Analyzing JS-rendered content...`);
+    console.log(`  📏 Raw text length: ${rawText.length}`);
+    console.log(`  📏 Rendered text length: ${renderedText.length}`);
+    
     try {
       // Get detailed content analysis
+      console.log(`  🔍 Running page evaluation...`);
       const contentAnalysis = await page.evaluate(() => {
         // Find elements that likely contain meaningful content
         const contentSelectors = [
@@ -839,8 +853,13 @@ class AdvancedJSAnalyzer {
         return analysis;
       });
 
+      console.log(`  ✅ Page evaluation completed`);
+      console.log(`  📊 Content types found: ${Object.keys(contentAnalysis.contentTypes).length}`);
+      console.log(`  📊 Critical elements: ${contentAnalysis.criticalElements.length}`);
+
       // Compare raw vs rendered to find what's missing
       const missingContent = this.identifyMissingContent(rawText, renderedText, contentAnalysis);
+      console.log(`  📊 Missing content items: ${missingContent.length}`);
 
       return {
         ...contentAnalysis,
@@ -850,6 +869,8 @@ class AdvancedJSAnalyzer {
       };
 
     } catch (error) {
+      console.error(`  ❌ JS content analysis failed: ${error.message}`);
+      console.error(`  ❌ Stack trace: ${error.stack}`);
       return {
         error: error.message,
         summary: 'Unable to analyze JS-rendered content',
