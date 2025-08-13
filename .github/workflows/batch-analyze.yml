@@ -1,0 +1,94 @@
+name: Batch JavaScript Rendering Analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      analysis_type:
+        description: 'Analysis type'
+        required: false
+        default: 'stealth'
+        type: choice
+        options:
+          - full
+          - quick
+          - stealth
+      enhanced_evasion:
+        description: 'Enable enhanced bot evasion'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      sheet_id:
+        description: 'Google Sheet ID'
+        required: true
+        type: string
+      max_batch_size:
+        description: 'Maximum number of URLs to process'
+        required: false
+        default: '50'
+        type: string
+      delay_between_urls:
+        description: 'Delay between URLs (milliseconds)'
+        required: false
+        default: '5000'
+        type: string
+
+jobs:
+  batch-analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300  # 5 hour timeout for large batches
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install dependencies
+      run: |
+        npm install playwright googleapis
+        npx playwright install chromium firefox webkit
+        
+    - name: Run batch analysis
+      env:
+        GOOGLE_SHEET_ID: ${{ inputs.sheet_id }}
+        GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+        ANALYSIS_TYPE: ${{ inputs.analysis_type }}
+        ENHANCED_EVASION: ${{ inputs.enhanced_evasion }}
+        MAX_BATCH_SIZE: ${{ inputs.max_batch_size }}
+        DELAY_BETWEEN_URLS: ${{ inputs.delay_between_urls }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
+      run: |
+        echo "🚀 Starting batch analysis..."
+        echo "📊 Analysis Type: ${{ inputs.analysis_type }}"
+        echo "🥷 Enhanced Evasion: ${{ inputs.enhanced_evasion }}"
+        echo "📏 Max Batch Size: ${{ inputs.max_batch_size }}"
+        echo "⏱️ Delay Between URLs: ${{ inputs.delay_between_urls }}ms"
+        echo "📋 Sheet ID: ${{ inputs.sheet_id }}"
+        
+        node batch-analyzer.js
+        
+    - name: Upload screenshots
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: batch-screenshots-${{ github.run_id }}
+        path: screenshots/
+        if-no-files-found: ignore
+        
+    - name: Upload analysis reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: batch-reports-${{ github.run_id }}
+        path: |
+          analysis-report.json
+          analysis-summary.txt
+          error-report.json
+        if-no-files-found: ignore
