@@ -28,7 +28,7 @@ on:
 jobs:
   analyze:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 12
     
     steps:
     - name: 📥 Checkout code
@@ -41,13 +41,13 @@ jobs:
         cache: 'npm'
     
     - name: 📦 Install dependencies
-      run: npm ci
+      run: npm install
     
     - name: 🎭 Install Playwright browsers
-      run: npx playwright install --with-deps chromium firefox webkit
+      run: npx playwright install chromium firefox webkit --with-deps
     
     - name: 🔍 Run analysis
-      run: node src/analyzer.js
+      run: node analyzer.js
       env:
         TARGET_URL: ${{ github.event.inputs.url }}
         ANALYSIS_TYPE: ${{ github.event.inputs.analysis_type }}
@@ -58,18 +58,29 @@ jobs:
         GITHUB_RUN_ID: ${{ github.run_id }}
         GITHUB_REPOSITORY: ${{ github.repository }}
     
-    - name: 📊 Upload screenshots
+    - name: 📸 Upload screenshots
       uses: actions/upload-artifact@v4
       if: always()
       with:
         name: analysis-screenshots-${{ github.run_id }}
         path: screenshots/
         retention-days: 7
+        if-no-files-found: ignore
     
-    - name: 📈 Upload analysis report
+    - name: 📄 Upload analysis report
       uses: actions/upload-artifact@v4
       if: always()
       with:
         name: analysis-report-${{ github.run_id }}
-        path: analysis-report.json
+        path: "*.json"
         retention-days: 7
+        if-no-files-found: ignore
+    
+    - name: 📊 Upload summary
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: analysis-summary-${{ github.run_id }}
+        path: "*.txt"
+        retention-days: 7
+        if-no-files-found: ignore
