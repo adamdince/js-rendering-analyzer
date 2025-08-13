@@ -755,127 +755,105 @@ class AdvancedJSAnalyzer {
     console.log(`  📏 Rendered text length: ${renderedText.length}`);
     
     try {
-      // Get detailed content analysis
-      console.log(`  🔍 Running page evaluation...`);
-      const contentAnalysis = await page.evaluate(() => {
-        // Find elements that likely contain meaningful content
-        const contentSelectors = [
-          'main', 'article', '.content', '#content', '.main-content',
-          'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-          'p', '.text', '.description', '.summary',
-          '.card', '.item', '.product', '.service',
-          'nav', '.navigation', '.menu',
-          '.header', '.hero', '.banner',
-          'form', '.form', 'input', 'button',
-          '.list', 'ul', 'ol', 'li',
-          'table', 'tbody', 'tr', 'td'
-        ];
-
-        const analysis = {
-          contentTypes: {},
-          criticalElements: [],
-          navigationElements: [],
-          interactiveElements: [],
-          dataElements: [],
-          missingInRaw: []
+      // Get specific content differences
+      console.log(`  🔍 Running before/after comparison...`);
+      const contentDifferences = await page.evaluate((rawTextContent) => {
+        const differences = {
+          navigation: { raw: 0, rendered: 0, examples: [] },
+          headings: { raw: [], rendered: [], newHeadings: [] },
+          pricing: { raw: [], rendered: [], newPrices: [] },
+          forms: { raw: 0, rendered: 0, newElements: [] },
+          images: { raw: 0, rendered: 0, examples: [] },
+          buttons: { raw: 0, rendered: 0, newButtons: [] },
+          textContent: { rawChars: 0, renderedChars: 0, majorSections: [] },
+          lists: { raw: 0, rendered: 0, newLists: [] }
         };
 
-        // Check each content type
-        contentSelectors.forEach(selector => {
-          const elements = document.querySelectorAll(selector);
-          if (elements.length > 0) {
-            const elementType = selector.replace(/[.#]/, '');
-            analysis.contentTypes[elementType] = {
-              count: elements.length,
-              totalText: Array.from(elements).reduce((sum, el) => sum + (el.innerText || '').length, 0),
-              examples: Array.from(elements).slice(0, 3).map(el => {
-                const text = (el.innerText || '').trim().substring(0, 100);
-                return text ? text + (text.length === 100 ? '...' : '') : '[No text content]';
-              }).filter(text => text !== '[No text content]')
-            };
-          }
-        });
+        // Navigation analysis
+        const navElements = document.querySelectorAll('nav, .nav, .navigation, .menu, header a');
+        differences.navigation.rendered = navElements.length;
+        differences.navigation.examples = Array.from(navElements)
+          .slice(0, 5)
+          .map(el => el.innerText?.trim().substring(0, 30))
+          .filter(text => text && text.length > 0);
 
-        // Identify critical missing content
+        // Heading analysis
         const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
-        const paragraphs = document.querySelectorAll('p');
-        const navigation = document.querySelectorAll('nav, .nav, .navigation, .menu');
-        const forms = document.querySelectorAll('form, input, button');
-        const lists = document.querySelectorAll('ul, ol, .list');
+        differences.headings.rendered = Array.from(headings)
+          .map(h => h.innerText?.trim())
+          .filter(text => text && text.length > 0)
+          .slice(0, 10);
 
-        if (headings.length > 0) {
-          analysis.criticalElements.push({
-            type: 'Headings',
-            count: headings.length,
-            examples: Array.from(headings).slice(0, 3).map(h => h.innerText.trim().substring(0, 60))
+        // Check for pricing patterns
+        const priceElements = document.querySelectorAll('[class*="price"], [class*="cost"], [class*="amount"], .currency, [data-price]');
+        differences.pricing.rendered = Array.from(priceElements)
+          .map(el => el.innerText?.trim())
+          .filter(text => text && /[\$£€¥₹]|\d+\.\d{2}|price|cost/.test(text))
+          .slice(0, 8);
+
+        // Form elements
+        const forms = document.querySelectorAll('form, input, button, select, textarea');
+        differences.forms.rendered = forms.length;
+        differences.forms.newElements = Array.from(forms)
+          .map(el => {
+            if (el.tagName === 'BUTTON') return `Button: "${el.innerText?.trim().substring(0, 20)}"`;
+            if (el.tagName === 'INPUT') return `Input[${el.type || 'text'}]`;
+            if (el.tagName === 'SELECT') return `Dropdown with ${el.options?.length || 0} options`;
+            if (el.tagName === 'FORM') return `Form with ${el.elements?.length || 0} elements`;
+            return el.tagName.toLowerCase();
+          })
+          .slice(0, 10);
+
+        // Image analysis
+        const images = document.querySelectorAll('img[src], picture, [style*="background-image"]');
+        differences.images.rendered = images.length;
+        differences.images.examples = Array.from(images)
+          .slice(0, 5)
+          .map(img => {
+            const alt = img.alt || img.getAttribute('aria-label') || '';
+            const src = img.src || img.style.backgroundImage || '';
+            return alt.substring(0, 30) || src.split('/').pop()?.substring(0, 20) || 'Image';
           });
-        }
 
-        if (paragraphs.length > 0) {
-          analysis.criticalElements.push({
-            type: 'Paragraphs',
-            count: paragraphs.length,
-            totalChars: Array.from(paragraphs).reduce((sum, p) => sum + p.innerText.length, 0)
-          });
-        }
+        // List analysis  
+        const lists = document.querySelectorAll('ul, ol, .list, [class*="list"]');
+        differences.lists.rendered = lists.length;
+        differences.lists.newLists = Array.from(lists)
+          .map(list => {
+            const items = list.querySelectorAll('li, .item, [class*="item"]').length;
+            const preview = list.innerText?.trim().substring(0, 50) || '';
+            return `${items} items: ${preview}`;
+          })
+          .slice(0, 5);
 
-        if (navigation.length > 0) {
-          analysis.navigationElements.push({
-            type: 'Navigation',
-            count: navigation.length,
-            examples: Array.from(navigation).slice(0, 2).map(nav => {
-              const links = nav.querySelectorAll('a');
-              return `${links.length} links: ${Array.from(links).slice(0, 3).map(a => a.innerText.trim()).join(', ')}`;
-            })
-          });
-        }
+        // Overall text content
+        differences.textContent.renderedChars = document.body?.innerText?.length || 0;
 
-        if (forms.length > 0) {
-          analysis.interactiveElements.push({
-            type: 'Forms & Inputs',
-            count: forms.length,
-            examples: Array.from(forms).slice(0, 3).map(f => {
-              if (f.tagName === 'FORM') {
-                const inputs = f.querySelectorAll('input, select, textarea');
-                return `Form with ${inputs.length} inputs`;
-              }
-              return f.tagName.toLowerCase() + (f.type ? `[${f.type}]` : '');
-            })
-          });
-        }
+        // Find major content sections
+        const contentSections = document.querySelectorAll('main, article, section, .content, [class*="content"]');
+        differences.textContent.majorSections = Array.from(contentSections)
+          .map(section => {
+            const chars = section.innerText?.length || 0;
+            const preview = section.innerText?.trim().substring(0, 60) || '';
+            const className = section.className || section.tagName.toLowerCase();
+            return { className, chars, preview };
+          })
+          .filter(section => section.chars > 100)
+          .slice(0, 5);
 
-        // Check for data-rich content
-        const tables = document.querySelectorAll('table');
-        const dataLists = document.querySelectorAll('.data, .results, .items, .product-list, .item-list');
-        
-        if (tables.length > 0) {
-          analysis.dataElements.push({
-            type: 'Tables',
-            count: tables.length,
-            examples: Array.from(tables).slice(0, 2).map(table => {
-              const rows = table.querySelectorAll('tr').length;
-              const cols = table.querySelector('tr') ? table.querySelector('tr').querySelectorAll('td, th').length : 0;
-              return `${rows} rows × ${cols} columns`;
-            })
-          });
-        }
+        return differences;
+      }, rawText);
 
-        return analysis;
-      });
+      console.log(`  ✅ Before/after comparison completed`);
 
-      console.log(`  ✅ Page evaluation completed`);
-      console.log(`  📊 Content types found: ${Object.keys(contentAnalysis.contentTypes).length}`);
-      console.log(`  📊 Critical elements: ${contentAnalysis.criticalElements.length}`);
-
-      // Compare raw vs rendered to find what's missing
-      const missingContent = this.identifyMissingContent(rawText, renderedText, contentAnalysis);
-      console.log(`  📊 Missing content items: ${missingContent.length}`);
+      // Now compare with what was in raw HTML
+      const rawAnalysis = this.analyzeRawContent(rawText);
+      const detailedDifferences = this.generateDetailedDifferences(rawAnalysis, contentDifferences);
 
       return {
-        ...contentAnalysis,
-        summary: this.summarizeJSContent(contentAnalysis, missingContent),
-        missingFromRaw: missingContent,
-        recommendations: this.generateContentRecommendations(contentAnalysis, missingContent)
+        summary: this.generateBeforeAfterSummary(detailedDifferences),
+        detailedDifferences: detailedDifferences,
+        recommendations: this.generateFactBasedRecommendations(detailedDifferences)
       };
 
     } catch (error) {
@@ -883,10 +861,152 @@ class AdvancedJSAnalyzer {
       console.error(`  ❌ Stack trace: ${error.stack}`);
       return {
         error: error.message,
-        summary: 'Unable to analyze JS-rendered content',
-        recommendations: ['Manual inspection required']
+        summary: 'Unable to analyze before/after differences',
+        recommendations: ['Manual before/after comparison required']
       };
     }
+  }
+
+  analyzeRawContent(rawText) {
+    // Simple text-based analysis of raw content
+    const headingMatches = rawText.match(/<h[1-6][^>]*>([^<]+)</gi) || [];
+    const linkMatches = rawText.match(/<a[^>]*>([^<]+)</gi) || [];
+    const priceMatches = rawText.match(/[\$£€¥₹]\d+\.?\d*|\d+\.?\d*\s*(dollar|euro|pound|yen)/gi) || [];
+    const buttonMatches = rawText.match(/<button[^>]*>([^<]+)</gi) || [];
+    const formMatches = rawText.match(/<(form|input|select|textarea)[^>]*>/gi) || [];
+
+    return {
+      headings: headingMatches.length,
+      links: linkMatches.length,
+      prices: priceMatches.length,
+      buttons: buttonMatches.length,
+      forms: formMatches.length,
+      totalChars: rawText.length
+    };
+  }
+
+  generateDetailedDifferences(rawAnalysis, renderedAnalysis) {
+    const differences = [];
+
+    // Navigation differences
+    if (renderedAnalysis.navigation.rendered > rawAnalysis.links) {
+      differences.push({
+        type: 'Navigation',
+        raw: `${rawAnalysis.links} links`,
+        rendered: `${renderedAnalysis.navigation.rendered} navigation elements`,
+        newContent: renderedAnalysis.navigation.examples.slice(0, 3),
+        impact: 'High - affects site crawlability'
+      });
+    }
+
+    // Heading differences  
+    if (renderedAnalysis.headings.rendered.length > rawAnalysis.headings) {
+      differences.push({
+        type: 'Headings',
+        raw: `${rawAnalysis.headings} headings`,
+        rendered: `${renderedAnalysis.headings.rendered.length} headings`,
+        newContent: renderedAnalysis.headings.rendered.slice(0, 3),
+        impact: 'High - affects content structure'
+      });
+    }
+
+    // Pricing differences
+    if (renderedAnalysis.pricing.rendered.length > rawAnalysis.prices) {
+      differences.push({
+        type: 'Pricing',
+        raw: `${rawAnalysis.prices} price elements`,
+        rendered: `${renderedAnalysis.pricing.rendered.length} price elements`,
+        newContent: renderedAnalysis.pricing.rendered.slice(0, 3),
+        impact: 'Critical - essential for e-commerce data'
+      });
+    }
+
+    // Form/Interactive differences
+    if (renderedAnalysis.forms.rendered > rawAnalysis.forms) {
+      differences.push({
+        type: 'Interactive Elements',
+        raw: `${rawAnalysis.forms} form elements`,
+        rendered: `${renderedAnalysis.forms.rendered} interactive elements`,
+        newContent: renderedAnalysis.forms.newElements.slice(0, 3),
+        impact: 'Medium - affects functionality'
+      });
+    }
+
+    // Image differences
+    if (renderedAnalysis.images.rendered > 0) {
+      differences.push({
+        type: 'Images',
+        raw: 'Static/placeholder images',
+        rendered: `${renderedAnalysis.images.rendered} loaded images`,
+        newContent: renderedAnalysis.images.examples.slice(0, 3),
+        impact: 'Low - mainly visual content'
+      });
+    }
+
+    // Content sections
+    if (renderedAnalysis.textContent.majorSections.length > 0) {
+      const significantSections = renderedAnalysis.textContent.majorSections
+        .filter(section => section.chars > 500);
+      
+      if (significantSections.length > 0) {
+        differences.push({
+          type: 'Content Sections',
+          raw: `${rawAnalysis.totalChars} characters`,
+          rendered: `${renderedAnalysis.textContent.renderedChars} characters`,
+          newContent: significantSections.map(s => `${s.className}: ${s.preview}...`),
+          impact: 'High - major content blocks'
+        });
+      }
+    }
+
+    return differences;
+  }
+
+  generateBeforeAfterSummary(differences) {
+    if (differences.length === 0) {
+      return 'No significant content differences detected between raw and rendered HTML';
+    }
+
+    const summary = differences.map(diff => {
+      const change = `${diff.type}: ${diff.raw} → ${diff.rendered}`;
+      if (diff.newContent && diff.newContent.length > 0) {
+        const examples = diff.newContent.slice(0, 2).join(', ');
+        return `${change} (e.g., ${examples})`;
+      }
+      return change;
+    }).join(' | ');
+
+    return `Before/After Changes: ${summary}`;
+  }
+
+  generateFactBasedRecommendations(differences) {
+    const recommendations = [];
+
+    differences.forEach(diff => {
+      switch (diff.type) {
+        case 'Navigation':
+          recommendations.push(`🧭 Navigation: ${diff.rendered} elements missing from raw HTML - impacts crawling and LLM site mapping`);
+          break;
+        case 'Headings':
+          recommendations.push(`📝 Content Structure: ${diff.rendered} headings only visible after JS - affects content hierarchy understanding`);
+          break;
+        case 'Pricing':
+          recommendations.push(`💰 Pricing: ${diff.rendered} price elements load via JS - critical for e-commerce analysis`);
+          break;
+        case 'Interactive Elements':
+          recommendations.push(`🔧 Functionality: ${diff.rendered} interactive elements require JS - limits automation capabilities`);
+          break;
+        case 'Content Sections':
+          recommendations.push(`📄 Content: Major text sections added by JS - significant content missing from static HTML`);
+          break;
+      }
+    });
+
+    if (recommendations.length === 0) {
+      recommendations.push('✅ Content well-accessible - minimal dependency on JavaScript rendering');
+    }
+
+    return recommendations;
   }
 
   identifyMissingContent(rawText, renderedText, contentAnalysis) {
