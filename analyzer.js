@@ -846,7 +846,7 @@ class AdvancedJSAnalyzer {
 
         // Check for data-rich content
         const tables = document.querySelectorAll('table');
-        const dataLists = document.querySelectorAll('[data-*], .data, .results, .items');
+        const dataLists = document.querySelectorAll('.data, .results, .items, .product-list, .item-list');
         
         if (tables.length > 0) {
           analysis.dataElements.push({
