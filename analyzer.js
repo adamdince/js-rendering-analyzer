@@ -878,6 +878,7 @@ class AdvancedJSAnalyzer {
   }
 
   generateLLMFocusedSummary(missingContent) {
+    // Generate the technical summary
     const issues = [];
     
     if (missingContent.navigation.count > 0) {
@@ -901,6 +902,9 @@ class AdvancedJSAnalyzer {
       issues.push(`${missingContent.criticalData.count} pricing/data elements missing`);
     }
     
+    // Generate the plain-language "Bottom Line" summary
+    const bottomLine = this.generateBottomLineSummary(missingContent);
+    
     if (issues.length === 0) {
       return 'Content appears accessible to LLMs - no significant missing elements detected';
     }
@@ -917,8 +921,74 @@ class AdvancedJSAnalyzer {
     }
     
     const exampleText = examples.length > 0 ? ` (e.g., ${examples.slice(0, 2).join(', ')})` : '';
+    const technicalSummary = `LLM Impact: ${issues.join(' | ')}${exampleText}`;
     
-    return `LLM Impact: ${issues.join(' | ')}${exampleText}`;
+    // Combine technical and plain-language summaries
+    return `${technicalSummary} | BOTTOM LINE: ${bottomLine}`;
+  }
+
+  generateBottomLineSummary(missingContent) {
+    const willMiss = [];
+    const willStillGet = [];
+    
+    // What LLMs will miss
+    if (missingContent.criticalData.count > 0) {
+      willMiss.push(`actual prices/costs (${missingContent.criticalData.count} missing - CRITICAL)`);
+    }
+    
+    if (missingContent.headings.count > 0) {
+      willMiss.push(`page structure/headings (${missingContent.headings.count} missing)`);
+    }
+    
+    if (missingContent.navigation.count > 0) {
+      willMiss.push(`some navigation options (${missingContent.navigation.count} links)`);
+    }
+    
+    if (missingContent.textContent.totalMissingChars > 5000) {
+      willMiss.push(`significant content blocks (~${Math.round(missingContent.textContent.totalMissingChars/1000)}k characters)`);
+    }
+    
+    if (missingContent.interactiveElements.count > 0) {
+      willMiss.push(`interactive functionality (${missingContent.interactiveElements.count} elements - not critical for content)`);
+    }
+    
+    // What LLMs will still get (based on what's NOT missing)
+    if (missingContent.headings.count === 0) {
+      willStillGet.push('page structure and headings');
+    }
+    
+    if (missingContent.textContent.totalMissingChars < 2000) {
+      willStillGet.push('most descriptive text');
+    }
+    
+    if (missingContent.criticalData.count === 0) {
+      willStillGet.push('pricing and key data');
+    }
+    
+    if (missingContent.navigation.count <= 2) {
+      willStillGet.push('main navigation');
+    }
+    
+    // Always add these likely positives
+    willStillGet.push('basic page information');
+    if (missingContent.textContent.count < 3) {
+      willStillGet.push('general content');
+    }
+    
+    // Format the bottom line
+    let summary = '';
+    
+    if (willMiss.length === 0) {
+      summary = 'LLMs can access virtually all content without JavaScript';
+    } else {
+      summary = `LLMs will miss: ${willMiss.join(', ')}`;
+      
+      if (willStillGet.length > 0) {
+        summary += ` | BUT will still get: ${willStillGet.join(', ')}`;
+      }
+    }
+    
+    return summary;
   }
 
   generateLLMFocusedRecommendations(missingContent) {
