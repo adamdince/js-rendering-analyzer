@@ -260,10 +260,14 @@ class AdvancedJSAnalyzer {
       });
 
       // Analyze content
+      console.log(`  🔍 STARTING CONTENT ANALYSIS`);
       const analysis = await this.analyzeContent(page, rawHtml, renderedHtml);
+      console.log(`  ✅ CONTENT ANALYSIS COMPLETED`);
       
       // Get performance metrics
+      console.log(`  ⏱️ GETTING PERFORMANCE METRICS`);
       const metrics = await this.getPerformanceMetrics(page);
+      console.log(`  ✅ PERFORMANCE METRICS COMPLETED`);
       
       await context.close();
       
@@ -705,7 +709,13 @@ class AdvancedJSAnalyzer {
     const percentChange = cleanRaw.length > 0 ? 
       Math.round((difference / cleanRaw.length) * 100) : 0;
     
-    console.log(`  📊 Content difference: ${difference} characters (${percentChange}%)`);
+    // Safety check for extreme values
+    const safePercentChange = Math.min(Math.max(percentChange, -1000), 1000);
+    if (Math.abs(percentChange) > 1000) {
+      console.log(`  ⚠️ Extreme percentage detected: ${percentChange}%, capping at ${safePercentChange}%`);
+    }
+    
+    console.log(`  📊 Content difference: ${difference} characters (${safePercentChange}%)`);
     
     // Detect frameworks
     const frameworks = await this.detectFrameworks(renderedHtml, page);
@@ -729,8 +739,8 @@ class AdvancedJSAnalyzer {
       rawHtmlLength: rawHtml.length,
       renderedHtmlLength: renderedHtml.length,
       contentDifference: difference,
-      contentDifferencePercent: percentChange,
-      significantChange: Math.abs(percentChange) > 15 || Math.abs(difference) > 2000,
+      contentDifferencePercent: safePercentChange,
+      significantChange: Math.abs(safePercentChange) > 15 || Math.abs(difference) > 2000,
       frameworks: frameworks,
       dynamicElements: dynamicElements,
       rawContentLength: cleanRaw.length,
