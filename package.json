@@ -1,12 +1,17 @@
 {
   "name": "js-rendering-analyzer",
-  "version": "1.0.0",
-  "description": "JavaScript rendering analysis with Playwright",
+  "version": "2.0.0",
+  "description": "Advanced JavaScript rendering analysis with Playwright",
   "main": "analyzer.js",
   "scripts": {
-    "start": "node analyzer.js"
+    "start": "node analyzer.js",
+    "test": "node analyzer.js"
   },
   "dependencies": {
-    "playwright": "^1.54.0"
+    "playwright": "^1.54.0",
+    "googleapis": "^132.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
