@@ -1,1 +1,75 @@
+name: 🔍 Analyze URL with Playwright
 
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'URL to analyze'
+        required: true
+        type: string
+      sheet_id:
+        description: 'Google Sheet ID'
+        required: false
+        type: string
+      row_number:
+        description: 'Row number to update'
+        required: false
+        type: string
+      analysis_type:
+        description: 'Type of analysis'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+        - 'full'
+        - 'quick'
+        - 'stealth'
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+    
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: 📦 Install dependencies
+      run: npm ci
+    
+    - name: 🎭 Install Playwright browsers
+      run: npx playwright install --with-deps chromium firefox webkit
+    
+    - name: 🔍 Run analysis
+      run: node src/analyzer.js
+      env:
+        TARGET_URL: ${{ github.event.inputs.url }}
+        ANALYSIS_TYPE: ${{ github.event.inputs.analysis_type }}
+        GOOGLE_SHEET_ID: ${{ github.event.inputs.sheet_id }}
+        ROW_NUMBER: ${{ github.event.inputs.row_number }}
+        GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+    
+    - name: 📊 Upload screenshots
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: analysis-screenshots-${{ github.run_id }}
+        path: screenshots/
+        retention-days: 7
+    
+    - name: 📈 Upload analysis report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: analysis-report-${{ github.run_id }}
+        path: analysis-report.json
+        retention-days: 7
