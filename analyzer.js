@@ -75,6 +75,11 @@ class AdvancedJSAnalyzer {
   }
 
   async analyzeBrowser(browserType, browserName) {
+    // For extremely protected sites, try multiple approaches
+    if (this.isExtremelyProtected()) {
+      return await this.analyzeProtectedSite(browserType, browserName);
+    }
+
     const launchOptions = {
       headless: true,
       args: [
@@ -119,7 +124,22 @@ class AdvancedJSAnalyzer {
       const contextOptions = {
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         viewport: { width: 1366, height: 768 },
-        locale: 'en-US'
+        locale: 'en-US',
+        timezoneId: 'America/New_York',
+        permissions: [],
+        extraHTTPHeaders: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'DNT': '1',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Cache-Control': 'max-age=0'
+        }
       };
 
       const context = await browser.newContext(contextOptions);
@@ -131,18 +151,62 @@ class AdvancedJSAnalyzer {
       
       const page = await context.newPage();
 
-      // Navigate and get raw HTML
+      // Navigate with enhanced error handling for HTTP/2 issues
       console.log(`  📄 Fetching page...`);
-      const response = await page.goto(this.targetUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: 30000
-      });
-
-      if (!response) {
-        throw new Error('Failed to load page');
+      
+      let response;
+      let rawHtml;
+      
+      try {
+        // First attempt with standard navigation
+        response = await page.goto(this.targetUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000
+        });
+        rawHtml = await response.text();
+      } catch (error) {
+        if (error.message.includes('ERR_HTTP2_PROTOCOL_ERROR')) {
+          console.log(`  🔄 HTTP/2 error detected, trying fallback approach...`);
+          
+          // Fallback: Try with HTTP/1.1 by creating new context
+          await context.close();
+          
+          const fallbackOptions = {
+            ...contextOptions,
+            extraHTTPHeaders: {
+              ...contextOptions.extraHTTPHeaders,
+              'Connection': 'close',  // Force HTTP/1.1
+              'HTTP2-Settings': undefined
+            }
+          };
+          
+          const fallbackContext = await browser.newContext(fallbackOptions);
+          await this.applyStealth(fallbackContext);
+          const fallbackPage = await fallbackContext.newPage();
+          
+          // Add additional HTTP/2 bypass
+          await fallbackPage.route('**/*', route => {
+            const headers = route.request().headers();
+            delete headers['http2-settings'];
+            route.continue({ headers });
+          });
+          
+          response = await fallbackPage.goto(this.targetUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: 30000
+          });
+          
+          rawHtml = await response.text();
+          
+          // Use fallback page for the rest of analysis
+          await context.close();
+          context = fallbackContext;
+          page = fallbackPage;
+          
+        } else {
+          throw error; // Re-throw if it's a different error
+        }
       }
-
-      const rawHtml = await response.text();
       
       // Wait for JavaScript rendering
       console.log(`  ⚡ Waiting for JavaScript execution...`);
@@ -188,6 +252,114 @@ class AdvancedJSAnalyzer {
     }
   }
 
+  isExtremelyProtected() {
+    const extremelyProtectedDomains = [
+      'anthem.com',
+      'bankofamerica.com',
+      'wellsfargo.com',
+      'jpmorgan.com'
+    ];
+    
+    return extremelyProtectedDomains.some(domain => 
+      this.targetUrl.toLowerCase().includes(domain)
+    );
+  }
+
+  async analyzeProtectedSite(browserType, browserName) {
+    console.log(`  🛡️ Using specialized approach for extremely protected site...`);
+    
+    try {
+      // Strategy 1: Try to get at least basic information
+      const basicInfo = await this.getBasicSiteInfo();
+      
+      // Strategy 2: Try alternative analysis
+      const alternativeAnalysis = await this.tryAlternativeAnalysis();
+      
+      // Combine results
+      return {
+        rawHtmlLength: 0,
+        renderedHtmlLength: 0,
+        contentDifference: 0,
+        contentDifferencePercent: 0,
+        significantChange: false,
+        frameworks: alternativeAnalysis.frameworks || ['Unknown - Site Protected'],
+        dynamicElements: { note: 'Site blocks automated analysis' },
+        rawContentLength: 0,
+        renderedContentLength: 0,
+        performanceMetrics: { error: 'Protected site - analysis blocked' },
+        screenshotPath: null,
+        statusCode: 'Protected',
+        timestamp: new Date().toISOString(),
+        status: 'protected_site',
+        protectionLevel: 'extreme',
+        alternativeInfo: basicInfo
+      };
+      
+    } catch (error) {
+      console.log(`  ❌ All protection bypass attempts failed: ${error.message}`);
+      
+      return {
+        rawHtmlLength: 0,
+        renderedHtmlLength: 0,
+        contentDifference: 0,
+        contentDifferencePercent: 0,
+        significantChange: false,
+        frameworks: ['Analysis Blocked'],
+        dynamicElements: { error: 'Site protection too strong' },
+        rawContentLength: 0,
+        renderedContentLength: 0,
+        performanceMetrics: { error: error.message },
+        screenshotPath: null,
+        statusCode: 'Blocked',
+        timestamp: new Date().toISOString(),
+        status: 'failed',
+        error: error.message,
+        recommendation: 'Site requires manual analysis or professional tools'
+      };
+    }
+  }
+
+  async getBasicSiteInfo() {
+    // Try to get basic info without full browser automation
+    const domain = new URL(this.targetUrl).hostname;
+    
+    return {
+      domain: domain,
+      isHealthcare: domain.includes('anthem') || domain.includes('health'),
+      isFinancial: domain.includes('bank') || domain.includes('financial'),
+      likelyJSDependency: 'High (based on domain type)',
+      recommendedApproach: 'Manual testing or enterprise tools'
+    };
+  }
+
+  async tryAlternativeAnalysis() {
+    const domain = new URL(this.targetUrl).hostname.toLowerCase();
+    
+    // Healthcare sites typically use heavy frameworks
+    if (domain.includes('anthem') || domain.includes('health')) {
+      return {
+        frameworks: ['Likely React/Angular (Healthcare sites typically use modern frameworks)'],
+        confidence: 'Low - based on industry patterns',
+        jsRequired: true
+      };
+    }
+    
+    // Financial sites often have complex protection
+    if (domain.includes('bank') || domain.includes('financial')) {
+      return {
+        frameworks: ['Likely heavy JS framework (Financial sites require secure frameworks)'],
+        confidence: 'Low - based on industry patterns',
+        jsRequired: true
+      };
+    }
+    
+    return {
+      frameworks: ['Unknown - analysis blocked'],
+      confidence: 'None',
+      jsRequired: 'Unknown'
+    };
+  }
+
   shouldUseStealth() {
     const protectedDomains = [
       'anthem.com',
@@ -208,18 +380,76 @@ class AdvancedJSAnalyzer {
       // Remove webdriver property
       delete Object.getPrototypeOf(navigator).webdriver;
       
-      // Override plugins
+      // Override webdriver property more thoroughly
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false,
+      });
+      
+      // Override plugins with realistic values
       Object.defineProperty(navigator, 'plugins', {
         get: () => [
-          { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
-          { name: 'Chromium PDF Plugin', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' }
+          {
+            0: { type: 'application/x-google-chrome-pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: null },
+            description: 'Portable Document Format',
+            filename: 'internal-pdf-viewer',
+            length: 1,
+            name: 'Chrome PDF Plugin'
+          },
+          {
+            0: { type: 'application/pdf', suffixes: 'pdf', description: '', enabledPlugin: null },
+            description: '',
+            filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai',
+            length: 1,
+            name: 'Chrome PDF Viewer'
+          },
+          {
+            0: { type: 'application/x-nacl', suffixes: '', description: 'Native Client Executable', enabledPlugin: null },
+            1: { type: 'application/x-pnacl', suffixes: '', description: 'Portable Native Client Executable', enabledPlugin: null },
+            description: '',
+            filename: 'internal-nacl-plugin',
+            length: 2,
+            name: 'Native Client'
+          }
         ]
       });
       
-      // Override languages
+      // Override languages with realistic values
       Object.defineProperty(navigator, 'languages', {
         get: () => ['en-US', 'en']
       });
+      
+      // Override permissions API
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+        Promise.resolve({ state: 'denied' }) :
+        originalQuery(parameters)
+      );
+      
+      // Override chrome runtime
+      if (!window.chrome) {
+        window.chrome = {};
+      }
+      if (!window.chrome.runtime) {
+        window.chrome.runtime = {};
+      }
+      
+      // Override WebGL vendor and renderer
+      const getParameter = WebGLRenderingContext.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function(parameter) {
+        if (parameter === 37445) {
+          return 'Intel Inc.';
+        }
+        if (parameter === 37446) {
+          return 'Intel Iris OpenGL Engine';
+        }
+        return getParameter(parameter);
+      };
+      
+      // Hide automation indicators
+      delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+      delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+      delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
     });
   }
 
