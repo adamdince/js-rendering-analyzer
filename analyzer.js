@@ -272,17 +272,14 @@ class AdvancedJSAnalyzer {
       // Strategy 1: Try to get at least basic information
       const basicInfo = await this.getBasicSiteInfo();
       
-      // Strategy 2: Try alternative analysis
-      const alternativeAnalysis = await this.tryAlternativeAnalysis();
-      
-      // Combine results
+      // Return actual analysis results without assumptions
       return {
         rawHtmlLength: 0,
         renderedHtmlLength: 0,
         contentDifference: 0,
         contentDifferencePercent: 0,
         significantChange: false,
-        frameworks: alternativeAnalysis.frameworks || ['Unknown - Site Protected'],
+        frameworks: ['Analysis Blocked - Unable to Detect'],
         dynamicElements: { note: 'Site blocks automated analysis' },
         rawContentLength: 0,
         renderedContentLength: 0,
@@ -320,43 +317,22 @@ class AdvancedJSAnalyzer {
   }
 
   async getBasicSiteInfo() {
-    // Try to get basic info without full browser automation
+    // Return basic domain info without making framework assumptions
     const domain = new URL(this.targetUrl).hostname;
     
     return {
       domain: domain,
-      isHealthcare: domain.includes('anthem') || domain.includes('health'),
-      isFinancial: domain.includes('bank') || domain.includes('financial'),
-      likelyJSDependency: 'High (based on domain type)',
+      analysisBlocked: true,
       recommendedApproach: 'Manual testing or enterprise tools'
     };
   }
 
   async tryAlternativeAnalysis() {
-    const domain = new URL(this.targetUrl).hostname.toLowerCase();
-    
-    // Healthcare sites typically use heavy frameworks
-    if (domain.includes('anthem') || domain.includes('health')) {
-      return {
-        frameworks: ['Likely React/Angular (Healthcare sites typically use modern frameworks)'],
-        confidence: 'Low - based on industry patterns',
-        jsRequired: true
-      };
-    }
-    
-    // Financial sites often have complex protection
-    if (domain.includes('bank') || domain.includes('financial')) {
-      return {
-        frameworks: ['Likely heavy JS framework (Financial sites require secure frameworks)'],
-        confidence: 'Low - based on industry patterns',
-        jsRequired: true
-      };
-    }
-    
+    // Remove all industry-based assumptions
     return {
-      frameworks: ['Unknown - analysis blocked'],
+      frameworks: ['Unable to detect - analysis blocked'],
       confidence: 'None',
-      jsRequired: 'Unknown'
+      jsRequired: 'Unknown - analysis blocked'
     };
   }
 
