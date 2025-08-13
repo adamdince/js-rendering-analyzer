@@ -462,7 +462,7 @@ class AdvancedJSAnalyzer {
       
       // Take screenshot
       console.log(`  📸 Taking screenshot...`);
-      const screenshotPath = `screenshots/${browserName}-anthem-${Date.now()}.png`;
+      const screenshotPath = `screenshots/${browserName}-enhanced-${Date.now()}.png`;
       await page.screenshot({ 
         path: screenshotPath,
         fullPage: true,
@@ -484,7 +484,7 @@ class AdvancedJSAnalyzer {
         statusCode: response.status(),
         timestamp: new Date().toISOString(),
         status: 'success',
-        evasionUsed: 'enhanced_anthem'
+        evasionUsed: 'enhanced'
       };
       
     } finally {
@@ -609,18 +609,10 @@ class AdvancedJSAnalyzer {
       return true;
     }
   }
-    const protectedDomains = [
-      'anthem.com',
-      'bankofamerica.com',
-      'chase.com',
-      'netflix.com',
-      'linkedin.com',
-      'amazon.com'
-    ];
-    
-    return protectedDomains.some(domain => 
-      this.targetUrl.toLowerCase().includes(domain)
-    );
+
+  shouldUseStealth() {
+    // Only use stealth if explicitly requested
+    return this.analysisType === 'stealth' || process.env.FORCE_STEALTH === 'true';
   }
 
   async applyStealth(context) {
