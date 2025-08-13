@@ -89,10 +89,26 @@ class AdvancedJSAnalyzer {
 
     // Add stealth techniques
     if (this.analysisType === 'stealth' || this.shouldUseStealth()) {
-      console.log(`  🥷 Applying stealth mode for ${browserName}...`);
+      console.log(`  🥷 Applying enhanced stealth mode for ${browserName}...`);
       launchOptions.args.push(
         '--disable-blink-features=AutomationControlled',
         '--disable-features=VizDisplayCompositor',
+        '--disable-web-security',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--disable-renderer-backgrounding',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-client-side-phishing-detection',
+        '--disable-sync',
+        '--disable-default-apps',
+        '--hide-scrollbars',
+        '--mute-audio',
+        '--no-default-browser-check',
+        '--no-pings',
+        '--disable-extensions-http-throttling',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-permissions-api',
+        '--force-device-scale-factor=1',
         '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       );
     }
