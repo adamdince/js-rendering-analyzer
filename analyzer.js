@@ -484,6 +484,11 @@ Full Report: analysis-report.json
   }
 
   async updateGoogleSheet() {
+    console.log('🔍 DEBUG: Starting Google Sheet update process...');
+    console.log(`Sheet ID: ${process.env.GOOGLE_SHEET_ID || 'Missing'}`);
+    console.log(`Row Number: ${process.env.ROW_NUMBER || 'Missing'}`);
+    console.log(`Service Account: ${process.env.GOOGLE_SERVICE_ACCOUNT ? 'Present' : 'Missing'}`);
+    
     if (!process.env.GOOGLE_SERVICE_ACCOUNT || !process.env.GOOGLE_SHEET_ID || !process.env.ROW_NUMBER) {
       console.log('📊 Skipping Google Sheets update - missing configuration');
       return;
@@ -493,6 +498,8 @@ Full Report: analysis-report.json
       console.log('📊 Updating Google Sheet...');
       
       const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
+      console.log(`✅ Service account credentials parsed successfully: ${credentials.client_email}`);
+      
       const auth = new google.auth.GoogleAuth({
         credentials,
         scopes: ['https://www.googleapis.com/auth/spreadsheets']
@@ -505,21 +512,31 @@ Full Report: analysis-report.json
       const { summary, browsers } = this.results;
       const chromiumResults = browsers.chromium || {};
 
+      // Safely handle all potential undefined values
+      const recommendations = Array.isArray(this.results.recommendations) ? this.results.recommendations : [];
+      const frameworksDetected = Array.isArray(summary.frameworksDetected) ? summary.frameworksDetected : [];
+      
+      const recommendationText = recommendations.length > 0 ? 
+        recommendations.slice(0, 2).join(' | ') : 
+        'Analysis complete';
+
       const githubUrl = `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
 
       const updateData = [
         [
-          chromiumResults.rawHtmlLength || '',
-          chromiumResults.renderedHtmlLength || '',
-          summary.averageContentChange || '',
-          summary.frameworksDetected.join(', ') || 'None',
-          summary.llmAccessibilityScore || '',
+          chromiumResults.rawHtmlLength || 0,
+          chromiumResults.renderedHtmlLength || 0,
+          summary.averageContentChange || 0,
+          frameworksDetected.join(', ') || 'None',
+          summary.llmAccessibilityScore || 0,
           `Complete (${this.analysisType})`,
-          summary.recommendations.slice(0, 2).join(' | ') || '',
+          recommendationText,
           githubUrl,
           new Date().toISOString()
         ]
       ];
+
+      console.log(`📝 Updating range B${rowNumber}:J${rowNumber} with data:`, JSON.stringify(updateData[0]));
 
       await sheets.spreadsheets.values.update({
         spreadsheetId: sheetId,
@@ -534,6 +551,7 @@ Full Report: analysis-report.json
 
     } catch (error) {
       console.error('❌ Failed to update Google Sheet:', error.message);
+      console.error('❌ Full error:', error);
     }
   }
 
