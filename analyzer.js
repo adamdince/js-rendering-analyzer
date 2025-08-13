@@ -4,8 +4,13 @@ const fs = require('fs').promises;
 
 class AdvancedJSAnalyzer {
   constructor() {
+    console.log('🔧 Initializing AdvancedJSAnalyzer...');
     this.targetUrl = process.env.TARGET_URL;
     this.analysisType = process.env.ANALYSIS_TYPE || 'full';
+    
+    console.log(`🎯 Target URL: ${this.targetUrl}`);
+    console.log(`📊 Analysis Type: ${this.analysisType}`);
+    
     this.results = {
       url: this.targetUrl,
       timestamp: new Date().toISOString(),
@@ -15,6 +20,8 @@ class AdvancedJSAnalyzer {
       recommendations: [],
       githubRunId: process.env.GITHUB_RUN_ID
     };
+    
+    console.log('✅ AdvancedJSAnalyzer initialized successfully');
   }
 
   async analyze() {
@@ -137,6 +144,7 @@ class AdvancedJSAnalyzer {
     }
 
     const browser = await browserType.launch(launchOptions);
+    console.log(`  ✅ Browser launched successfully`);
 
     try {
       const contextOptions = {
@@ -161,13 +169,16 @@ class AdvancedJSAnalyzer {
       };
 
       const context = await browser.newContext(contextOptions);
+      console.log(`  ✅ Browser context created`);
       
       // Apply additional stealth if needed
       if (this.analysisType === 'stealth' || this.shouldUseStealth()) {
+        console.log(`  🥷 Applying stealth techniques...`);
         await this.applyStealth(context);
       }
       
       const page = await context.newPage();
+      console.log(`  ✅ New page created`);
 
       // Navigate with enhanced error handling for HTTP/2 issues
       console.log(`  📄 Fetching page...`);
@@ -1348,19 +1359,39 @@ Full Report: analysis-report.json
   }
 }
 
-// Run the analysis
+// Run the analysis with timeout protection
 if (require.main === module) {
-  const analyzer = new AdvancedJSAnalyzer();
-  analyzer.analyze().catch(error => {
-    console.error('❌ FATAL ERROR:', error);
-    console.error('❌ Stack trace:', error.stack);
-    console.error('❌ Error details:', {
-      message: error.message,
-      name: error.name,
-      code: error.code
-    });
+  console.log('🚀 Starting analyzer script...');
+  console.log('📋 Environment check:');
+  console.log(`  TARGET_URL: ${process.env.TARGET_URL || 'MISSING'}`);
+  console.log(`  ANALYSIS_TYPE: ${process.env.ANALYSIS_TYPE || 'full (default)'}`);
+  console.log(`  NODE_VERSION: ${process.version}`);
+  
+  // Add a global timeout to prevent hanging
+  const GLOBAL_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+  const timeout = setTimeout(() => {
+    console.error('❌ GLOBAL TIMEOUT: Analysis took longer than 10 minutes');
     process.exit(1);
-  });
+  }, GLOBAL_TIMEOUT);
+  
+  const analyzer = new AdvancedJSAnalyzer();
+  analyzer.analyze()
+    .then(() => {
+      clearTimeout(timeout);
+      console.log('🎉 Analysis completed successfully!');
+      process.exit(0);
+    })
+    .catch(error => {
+      clearTimeout(timeout);
+      console.error('❌ FATAL ERROR:', error);
+      console.error('❌ Stack trace:', error.stack);
+      console.error('❌ Error details:', {
+        message: error.message,
+        name: error.name,
+        code: error.code
+      });
+      process.exit(1);
+    });
 }
 
 module.exports = AdvancedJSAnalyzer;
