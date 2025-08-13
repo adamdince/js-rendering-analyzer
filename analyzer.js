@@ -18,6 +18,17 @@ class AdvancedJSAnalyzer {
   }
 
   async analyze() {
+    // Validate environment
+    if (!this.targetUrl) {
+      throw new Error('TARGET_URL environment variable is required');
+    }
+    
+    try {
+      new URL(this.targetUrl);
+    } catch (error) {
+      throw new Error(`Invalid URL: ${this.targetUrl}`);
+    }
+
     console.log(`🚀 Starting ${this.analysisType} analysis for: ${this.targetUrl}`);
     
     try {
@@ -32,6 +43,7 @@ class AdvancedJSAnalyzer {
           this.results.browsers[name] = await this.analyzeBrowser(engine, name);
         } catch (error) {
           console.error(`❌ ${name} failed:`, error.message);
+          console.error(`❌ ${name} stack:`, error.stack);
           this.results.browsers[name] = {
             error: error.message,
             status: 'failed'
@@ -52,8 +64,9 @@ class AdvancedJSAnalyzer {
       
     } catch (error) {
       console.error('❌ Analysis failed:', error);
+      console.error('❌ Full stack trace:', error.stack);
       await this.handleError(error);
-      process.exit(1);
+      throw error; // Re-throw to trigger the main catch handler
     }
   }
 
@@ -1338,7 +1351,16 @@ Full Report: analysis-report.json
 // Run the analysis
 if (require.main === module) {
   const analyzer = new AdvancedJSAnalyzer();
-  analyzer.analyze().catch(console.error);
+  analyzer.analyze().catch(error => {
+    console.error('❌ FATAL ERROR:', error);
+    console.error('❌ Stack trace:', error.stack);
+    console.error('❌ Error details:', {
+      message: error.message,
+      name: error.name,
+      code: error.code
+    });
+    process.exit(1);
+  });
 }
 
 module.exports = AdvancedJSAnalyzer;
