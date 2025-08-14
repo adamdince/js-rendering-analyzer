@@ -73,7 +73,7 @@ class AdvancedJSAnalyzer {
       console.error('❌ Analysis failed:', error);
       console.error('❌ Full stack trace:', error.stack);
       await this.handleError(error);
-      throw error; // Re-throw to trigger the main catch handler
+      throw error;
     }
   }
 
@@ -352,15 +352,6 @@ class AdvancedJSAnalyzer {
     };
   }
 
-  async tryAlternativeAnalysis() {
-    // Remove all industry-based assumptions
-    return {
-      frameworks: ['Unable to detect - analysis blocked'],
-      confidence: 'None',
-      jsRequired: 'Unknown - analysis blocked'
-    };
-  }
-
   async analyzeWithEnhancedEvasion(browserType, browserName) {
     console.log(`  🥷 Using enhanced evasion techniques...`);
     
@@ -432,7 +423,7 @@ class AdvancedJSAnalyzer {
       const context = await browser.newContext(contextOptions);
       
       // Apply enhanced stealth
-      await this.applyAnthemStealth(context);
+      await this.applyEnhancedStealth(context);
       
       const page = await context.newPage();
 
@@ -496,7 +487,7 @@ class AdvancedJSAnalyzer {
     }
   }
 
-  async applyAnthemStealth(context) {
+  async applyEnhancedStealth(context) {
     await context.addInitScript(() => {
       // Aggressive removal of automation indicators
       delete Object.getPrototypeOf(navigator).webdriver;
@@ -697,50 +688,72 @@ class AdvancedJSAnalyzer {
     });
   }
 
+  // FIXED: Improved content analysis with better edge case handling
   async analyzeContent(page, rawHtml, renderedHtml) {
     console.log(`  📊 Starting content analysis...`);
+    
+    // Get clean text content for comparison
     const cleanRaw = this.cleanHtml(rawHtml);
     const cleanRendered = this.cleanHtml(renderedHtml);
     
-    console.log(`  📏 Clean raw length: ${cleanRaw.length}`);
-    console.log(`  📏 Clean rendered length: ${cleanRendered.length}`);
+    console.log(`  📏 Raw HTML length: ${rawHtml.length}`);
+    console.log(`  📏 Rendered HTML length: ${renderedHtml.length}`);
+    console.log(`  📏 Clean raw text length: ${cleanRaw.length}`);
+    console.log(`  📏 Clean rendered text length: ${cleanRendered.length}`);
     
+    // FIXED: Better percentage calculation with edge case handling
     const difference = cleanRendered.length - cleanRaw.length;
-    const percentChange = cleanRaw.length > 0 ? 
-      Math.round((difference / cleanRaw.length) * 100) : 0;
+    let percentChange = 0;
     
-    // Safety check for extreme values
-    const safePercentChange = Math.min(Math.max(percentChange, -1000), 1000);
-    if (Math.abs(percentChange) > 1000) {
-      console.log(`  ⚠️ Extreme percentage detected: ${percentChange}%, capping at ${safePercentChange}%`);
+    if (cleanRaw.length > 0) {
+      percentChange = Math.round((difference / cleanRaw.length) * 100);
+      // Cap extreme values that indicate calculation errors
+      if (Math.abs(percentChange) > 500) {
+        console.log(`  ⚠️ Extreme percentage detected: ${percentChange}%, investigating...`);
+        console.log(`  🔍 Raw sample: "${cleanRaw.substring(0, 200)}"`);
+        console.log(`  🔍 Rendered sample: "${cleanRendered.substring(0, 200)}"`);
+        
+        // If raw content is suspiciously small, recalculate differently
+        if (cleanRaw.length < 100) {
+          console.log(`  ⚠️ Raw content too small (${cleanRaw.length} chars), using absolute difference`);
+          percentChange = cleanRendered.length > 1000 ? 100 : Math.min(50, Math.round(difference / 10));
+        } else {
+          // Cap at reasonable maximum
+          percentChange = Math.sign(percentChange) * Math.min(Math.abs(percentChange), 200);
+        }
+      }
+    } else if (cleanRendered.length > 0) {
+      // If we have no raw content but rendered content exists
+      percentChange = 100; // 100% change, not infinite
     }
     
-    console.log(`  📊 Content difference: ${difference} characters (${safePercentChange}%)`);
+    console.log(`  📊 Content difference: ${difference} characters (${percentChange}%)`);
     
-    // Detect frameworks
-    const frameworks = await this.detectFrameworks(renderedHtml, page);
+    // FIXED: More accurate framework detection
+    const frameworks = await this.detectFrameworksAccurate(rawHtml, renderedHtml, page);
     console.log(`  🎭 Frameworks detected: ${frameworks.join(', ') || 'None'}`);
     
     // Get dynamic elements info
     const dynamicElements = await page.evaluate(() => {
       return {
         totalElements: document.querySelectorAll('*').length,
-        scriptTags: document.querySelectorAll('script').length,
-        loadingElements: document.querySelectorAll('[data-loading], .loading, .spinner, .skeleton').length
+        scriptTags: document.querySelectorAll('script[src], script:not([src])').length,
+        loadingElements: document.querySelectorAll('[data-loading], .loading, .spinner, .skeleton').length,
+        interactiveElements: document.querySelectorAll('button, input, select, textarea, [onclick], [onchange]').length
       };
-    }).catch(() => ({ totalElements: 0, scriptTags: 0, loadingElements: 0 }));
+    }).catch(() => ({ totalElements: 0, scriptTags: 0, loadingElements: 0, interactiveElements: 0 }));
 
     console.log(`  🧮 Dynamic elements: ${dynamicElements.totalElements} total, ${dynamicElements.scriptTags} scripts`);
 
-    // LLM-focused content analysis
-    const jsRenderedContent = await this.analyzeJSRenderedContent(cleanRaw, cleanRendered, page);
+    // FIXED: Improved LLM-focused content analysis
+    const jsRenderedContent = await this.analyzeJSRenderedContentFixed(cleanRaw, cleanRendered, rawHtml, page);
 
     return {
       rawHtmlLength: rawHtml.length,
       renderedHtmlLength: renderedHtml.length,
       contentDifference: difference,
-      contentDifferencePercent: safePercentChange,
-      significantChange: Math.abs(safePercentChange) > 15 || Math.abs(difference) > 2000,
+      contentDifferencePercent: percentChange,
+      significantChange: Math.abs(percentChange) > 15 || Math.abs(difference) > 2000,
       frameworks: frameworks,
       dynamicElements: dynamicElements,
       rawContentLength: cleanRaw.length,
@@ -749,60 +762,130 @@ class AdvancedJSAnalyzer {
     };
   }
 
-  async analyzeJSRenderedContent(rawText, renderedText, page) {
-    console.log(`  🔍 Analyzing truly missing content (LLM-relevant only)...`);
-    console.log(`  📏 Raw text length: ${rawText.length}`);
-    console.log(`  📏 Rendered text length: ${renderedText.length}`);
-    console.log(`  📊 Content change: ${renderedText.length - rawText.length} chars (${Math.round(((renderedText.length - rawText.length) / rawText.length) * 100)}%)`);
+  // FIXED: More accurate framework detection
+  async detectFrameworksAccurate(rawHtml, renderedHtml, page) {
+    const frameworks = [];
+    
+    // More specific patterns to reduce false positives
+    const patterns = {
+      'React': [
+        /data-reactroot/i,
+        /_reactInternalFiber/i,
+        /react(-dom)?\.(?:development|production)\.min\.js/i,
+        /__webpack_require__.*react/i
+      ],
+      'Vue.js': [
+        /vue\.(?:js|min\.js)/i,
+        /data-v-[a-f0-9]{8}/i,
+        /__vue__/i,
+        /Vue\.component/i
+      ],
+      'Angular': [
+        /ng-version="[\d.]+"/i,
+        /angular\.(?:js|min\.js)/i,
+        /\[ng-app\]/i,
+        /_angular_/i
+      ],
+      'Next.js': [
+        /__NEXT_DATA__/i,
+        /_next\/static/i,
+        /next\.config\.js/i
+      ],
+      'Nuxt.js': [
+        /__NUXT__/i,
+        /_nuxt\//i,
+        /nuxt\.config/i
+      ],
+      'Svelte': [
+        /svelte\/internal/i,
+        /\.svelte-/i,
+        /svelte\.js/i
+      ],
+      'Alpine.js': [
+        /x-data\s*=/i,
+        /alpine\.(?:js|min\.js)/i,
+        /@click\s*=/i
+      ],
+      'jQuery': [
+        /jquery[.-][\d.]+(?:\.min)?\.js/i,
+        /\$\(document\)\.ready/i,
+        /\$\(['"`][^'"`]+['"`]\)/
+      ]
+    };
+
+    // Check both raw and rendered HTML for patterns
+    const combinedHtml = rawHtml + '\n' + renderedHtml;
+    
+    for (const [name, regexes] of Object.entries(patterns)) {
+      let matchCount = 0;
+      for (const regex of regexes) {
+        if (regex.test(combinedHtml)) {
+          matchCount++;
+        }
+      }
+      
+      // Require multiple pattern matches to reduce false positives
+      if (matchCount >= 1 && (name === 'jQuery' ? matchCount >= 2 : true)) {
+        frameworks.push(name);
+      }
+    }
+
+    // JavaScript detection with better error handling
+    try {
+      const jsFrameworks = await page.evaluate(() => {
+        const detected = [];
+        
+        // More specific checks
+        if (window.React && (window.React.version || window.React.Component)) {
+          detected.push('React');
+        }
+        if (window.Vue && window.Vue.version) {
+          detected.push('Vue.js');
+        }
+        if (window.angular && window.angular.version) {
+          detected.push('Angular');
+        }
+        if (window.jQuery && window.jQuery.fn && window.jQuery.fn.jquery) {
+          detected.push('jQuery');
+        }
+        if (window.__NEXT_DATA__) {
+          detected.push('Next.js');
+        }
+        if (window.__NUXT__) {
+          detected.push('Nuxt.js');
+        }
+        
+        return detected;
+      });
+      
+      // Add JS-detected frameworks if not already present
+      jsFrameworks.forEach(fw => {
+        if (!frameworks.includes(fw)) {
+          frameworks.push(fw);
+        }
+      });
+    } catch (e) {
+      console.log(`  ⚠️ JavaScript framework detection failed: ${e.message}`);
+    }
+
+    // Remove duplicates and return
+    return [...new Set(frameworks)];
+  }
+
+  // FIXED: Improved LLM content analysis with better logic
+  async analyzeJSRenderedContentFixed(rawText, renderedText, rawHtml, page) {
+    console.log(`  🔍 Analyzing LLM-accessible content...`);
     
     try {
-      // Get raw HTML to check what's actually in the DOM vs what's visible
-      console.log(`  🔍 Getting raw DOM structure...`);
-      const rawHtml = await page.evaluate(() => document.documentElement.outerHTML);
-      
-      console.log(`  📏 Raw HTML length: ${rawHtml.length}`);
-      console.log(`  📏 Rendered HTML length: ${rawHtml.length}`);
-      
-      // DEBUG: Let's see what content is actually different
-      const contentSamples = await page.evaluate((rawTextContent) => {
-        const debug = {
-          rawTextSample: rawTextContent.substring(0, 500),
-          renderedTextSample: document.body?.innerText?.substring(0, 500) || 'No body text',
-          totalVisibleElements: document.querySelectorAll('*').length,
-          visibleTextElements: document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, div').length,
-          visibleNavElements: document.querySelectorAll('nav, .nav, .navigation, .menu, header a').length,
-          visibleHeadings: Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6')).map(h => h.innerText?.trim()).slice(0, 5),
-          visibleNavText: Array.from(document.querySelectorAll('nav a, .nav a, .navigation a, .menu a, header a')).map(a => a.innerText?.trim()).slice(0, 5),
-          visiblePrices: Array.from(document.querySelectorAll('[class*="price"], [class*="cost"], .currency, [data-price]')).map(p => p.innerText?.trim()).slice(0, 5),
-          bodyStructure: {
-            mainElements: document.querySelectorAll('main').length,
-            articles: document.querySelectorAll('article').length,
-            sections: document.querySelectorAll('section').length,
-            contentDivs: document.querySelectorAll('.content, [class*="content"]').length
-          }
-        };
-        return debug;
-      }, rawText);
-      
-      console.log(`  🔍 DEBUG INFO:`);
-      console.log(`    Total visible elements: ${contentSamples.totalVisibleElements}`);
-      console.log(`    Visible text elements: ${contentSamples.visibleTextElements}`);
-      console.log(`    Visible nav elements: ${contentSamples.visibleNavElements}`);
-      console.log(`    Visible headings: ${JSON.stringify(contentSamples.visibleHeadings)}`);
-      console.log(`    Visible nav text: ${JSON.stringify(contentSamples.visibleNavText)}`);
-      console.log(`    Body structure: ${JSON.stringify(contentSamples.bodyStructure)}`);
-      console.log(`    Raw text sample: "${contentSamples.rawTextSample.substring(0, 200)}..."`);
-      console.log(`    Rendered text sample: "${contentSamples.renderedTextSample.substring(0, 200)}..."`);
-      
-      // Get content that's actually missing from raw HTML (not just hidden by CSS)
+      // Get truly missing content analysis
       const trulyMissingContent = await page.evaluate((contentData) => {
         const { rawHtmlContent, rawTextContent } = contentData;
         const missing = {
-          navigation: { missingLinks: [], missingText: [] },
+          navigation: { missingLinks: [] },
           headings: { missingHeadings: [] },
-          textContent: { missingParagraphs: [], significantTextBlocks: [] },
-          interactiveElements: { missingButtons: [], missingForms: [] },
-          criticalData: { missingPrices: [], missingContent: [] },
+          textContent: { missingParagraphs: [] },
+          interactiveElements: { missingButtons: [] },
+          criticalData: { missingPrices: [] },
           debugInfo: {
             rawHtmlLength: rawHtmlContent.length,
             rawTextLength: rawTextContent.length,
@@ -811,94 +894,76 @@ class AdvancedJSAnalyzer {
           }
         };
 
-        // DEBUG: Check navigation - with detailed logging
-        const visibleNavLinks = document.querySelectorAll('nav a, .nav a, .navigation a, .menu a, header a');
-        console.log(`DEBUG: Found ${visibleNavLinks.length} visible nav links`);
+        // FIXED: More accurate navigation link detection
+        const visibleNavLinks = document.querySelectorAll('nav a, .nav a, .navigation a, .menu a, header a, [role="navigation"] a');
         
         Array.from(visibleNavLinks).forEach((link, index) => {
           const linkText = link.innerText?.trim();
-          const href = link.href;
           if (linkText && linkText.length > 2) {
-            const searchText = linkText.toLowerCase().substring(0, 15);
-            const foundInRawHtml = rawHtmlContent.toLowerCase().includes(searchText);
-            const foundInRawText = rawTextContent.toLowerCase().includes(searchText);
+            // More thorough search in raw content
+            const searchTerms = [
+              linkText.toLowerCase(),
+              linkText.toLowerCase().replace(/\s+/g, ''),
+              linkText.toLowerCase().substring(0, Math.min(linkText.length, 10))
+            ];
             
-            console.log(`DEBUG Nav ${index}: "${linkText}" -> HTML: ${foundInRawHtml}, Text: ${foundInRawText}`);
-            missing.debugInfo.searchExamples.push(`Nav "${linkText}": HTML=${foundInRawHtml}, Text=${foundInRawText}`);
+            const foundInRaw = searchTerms.some(term => 
+              rawHtmlContent.toLowerCase().includes(term) || 
+              rawTextContent.toLowerCase().includes(term)
+            );
             
-            if (!foundInRawHtml && !foundInRawText) {
-              missing.navigation.missingLinks.push(linkText.substring(0, 30));
+            if (!foundInRaw) {
+              missing.navigation.missingLinks.push(linkText.substring(0, 50));
             }
           }
         });
 
-        // DEBUG: Check headings - with detailed logging
-        const visibleHeadings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
-        console.log(`DEBUG: Found ${visibleHeadings.length} visible headings`);
+        // FIXED: Better heading detection
+        const visibleHeadings = document.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"], .heading, .title');
         
-        Array.from(visibleHeadings).forEach((heading, index) => {
+        Array.from(visibleHeadings).forEach((heading) => {
           const headingText = heading.innerText?.trim();
-          if (headingText && headingText.length > 3) {
-            const searchText = headingText.toLowerCase().substring(0, 20);
-            const foundInRawHtml = rawHtmlContent.toLowerCase().includes(searchText);
-            const foundInRawText = rawTextContent.toLowerCase().includes(searchText);
+          if (headingText && headingText.length > 2) {
+            const searchText = headingText.toLowerCase().substring(0, 30);
+            const foundInRaw = rawHtmlContent.toLowerCase().includes(searchText) || 
+                              rawTextContent.toLowerCase().includes(searchText);
             
-            console.log(`DEBUG Heading ${index}: "${headingText}" -> HTML: ${foundInRawHtml}, Text: ${foundInRawText}`);
-            missing.debugInfo.searchExamples.push(`Heading "${headingText}": HTML=${foundInRawHtml}, Text=${foundInRawText}`);
-            
-            if (!foundInRawHtml && !foundInRawText) {
+            if (!foundInRaw) {
               missing.headings.missingHeadings.push(headingText.substring(0, 60));
             }
           }
         });
 
-        // DEBUG: Check for significant text differences
-        const renderedBodyText = document.body?.innerText || '';
-        const textDifference = renderedBodyText.length - rawTextContent.length;
-        console.log(`DEBUG: Text difference: ${textDifference} characters`);
+        // FIXED: Better price/data detection
+        const priceElements = document.querySelectorAll(
+          '[class*="price"], [class*="cost"], [class*="dollar"], ' +
+          '[data-price], .currency, .amount, .fee, .rate'
+        );
         
-        // Sample random sections of rendered text to see if they exist in raw
-        const renderedSections = [];
-        for (let i = 0; i < Math.min(5, Math.floor(renderedBodyText.length / 1000)); i++) {
-          const start = i * 1000;
-          const sample = renderedBodyText.substring(start, start + 100).trim();
-          if (sample.length > 20) {
-            const foundInRaw = rawTextContent.toLowerCase().includes(sample.toLowerCase().substring(0, 50));
-            renderedSections.push({ sample, foundInRaw });
-            console.log(`DEBUG Text Section ${i}: "${sample.substring(0, 50)}..." -> Found in raw: ${foundInRaw}`);
-          }
-        }
-        
-        missing.debugInfo.renderedSections = renderedSections;
-
-        // Check for missing interactive elements (buttons with meaningful text)
-        const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"], .btn');
-        console.log(`DEBUG: Found ${buttons.length} buttons`);
-        
-        Array.from(buttons).slice(0, 10).forEach((button, index) => {
-          const buttonText = button.innerText?.trim() || button.value?.trim();
-          if (buttonText && buttonText.length > 2) {
-            const foundInRaw = rawHtmlContent.toLowerCase().includes(buttonText.toLowerCase());
-            console.log(`DEBUG Button ${index}: "${buttonText}" -> Found in raw: ${foundInRaw}`);
+        Array.from(priceElements).forEach((el) => {
+          const priceText = el.innerText?.trim();
+          if (priceText && (/[\$£€¥₹¢]/.test(priceText) || /\d+\.\d{2}/.test(priceText))) {
+            const foundInRaw = rawHtmlContent.toLowerCase().includes(priceText.toLowerCase());
             
             if (!foundInRaw) {
-              missing.interactiveElements.missingButtons.push(buttonText.substring(0, 30));
+              missing.criticalData.missingPrices.push(priceText.substring(0, 30));
             }
           }
         });
 
-        // Check for missing pricing/data content
-        const priceElements = document.querySelectorAll('[class*="price"], [class*="cost"], .currency, [data-price]');
-        console.log(`DEBUG: Found ${priceElements.length} price elements`);
+        // FIXED: Better button detection
+        const buttons = document.querySelectorAll(
+          'button, input[type="button"], input[type="submit"], ' +
+          '.btn, [role="button"], .button, [onclick]'
+        );
         
-        Array.from(priceElements).slice(0, 10).forEach((el, index) => {
-          const priceText = el.innerText?.trim();
-          if (priceText && /[\$£€¥₹]|\d+\.\d{2}/.test(priceText)) {
-            const foundInRaw = rawHtmlContent.toLowerCase().includes(priceText.toLowerCase());
-            console.log(`DEBUG Price ${index}: "${priceText}" -> Found in raw: ${foundInRaw}`);
+        Array.from(buttons).slice(0, 20).forEach((button) => {
+          const buttonText = button.innerText?.trim() || button.value?.trim() || button.title?.trim();
+          if (buttonText && buttonText.length > 1) {
+            const foundInRaw = rawHtmlContent.toLowerCase().includes(buttonText.toLowerCase());
             
             if (!foundInRaw) {
-              missing.criticalData.missingPrices.push(priceText.substring(0, 20));
+              missing.interactiveElements.missingButtons.push(buttonText.substring(0, 30));
             }
           }
         });
@@ -914,8 +979,7 @@ class AdvancedJSAnalyzer {
           },
           textContent: {
             count: missing.textContent.missingParagraphs.length,
-            totalMissingChars: missing.textContent.missingParagraphs.reduce((sum, p) => sum + p.length, 0),
-            examples: missing.textContent.missingParagraphs.slice(0, 2).map(p => p.preview)
+            totalMissingChars: missing.textContent.missingParagraphs.reduce((sum, p) => sum + p.length, 0)
           },
           interactiveElements: {
             count: missing.interactiveElements.missingButtons.length,
@@ -929,23 +993,14 @@ class AdvancedJSAnalyzer {
         };
       }, { rawHtmlContent: rawHtml, rawTextContent: rawText });
 
-      console.log(`  ✅ True missing content analysis completed`);
-      console.log(`  📊 Missing navigation: ${trulyMissingContent.navigation.count}`);
-      console.log(`  📊 Missing headings: ${trulyMissingContent.headings.count}`);
-      console.log(`  📊 Missing text content: ${trulyMissingContent.textContent.count}`);
-      console.log(`  📊 Missing interactive: ${trulyMissingContent.interactiveElements.count}`);
-      console.log(`  📊 Missing critical data: ${trulyMissingContent.criticalData.count}`);
-      console.log(`  🔍 Debug search examples: ${JSON.stringify(trulyMissingContent.debugInfo.searchExamples.slice(0, 3))}`);
-
       return {
-        summary: this.generateLLMFocusedSummary(trulyMissingContent),
+        summary: this.generateLLMFocusedSummaryFixed(trulyMissingContent),
         trulyMissingContent: trulyMissingContent,
-        recommendations: this.generateLLMFocusedRecommendations(trulyMissingContent)
+        recommendations: this.generateLLMFocusedRecommendationsFixed(trulyMissingContent)
       };
 
     } catch (error) {
-      console.error(`  ❌ LLM-focused content analysis failed: ${error.message}`);
-      console.error(`  ❌ Stack trace: ${error.stack}`);
+      console.error(`  ❌ LLM content analysis failed: ${error.message}`);
       return {
         error: error.message,
         summary: 'Unable to analyze LLM-accessible content',
@@ -954,215 +1009,77 @@ class AdvancedJSAnalyzer {
     }
   }
 
-  generateLLMFocusedSummary(missingContent) {
-    // Generate the technical summary
+  // FIXED: Fixed summary generation logic
+  generateLLMFocusedSummaryFixed(missingContent) {
+    const totalMissing = 
+      (missingContent.navigation?.count || 0) + 
+      (missingContent.headings?.count || 0) + 
+      (missingContent.criticalData?.count || 0) +
+      (missingContent.interactiveElements?.count || 0);
+    
+    if (totalMissing === 0) {
+      return 'Content appears fully accessible to LLMs - no significant missing elements detected';
+    }
+    
     const issues = [];
-    
-    if (missingContent.navigation.count > 0) {
-      issues.push(`${missingContent.navigation.count} navigation links truly missing from HTML`);
+    if (missingContent.criticalData?.count > 0) {
+      issues.push(`${missingContent.criticalData.count} pricing/data elements missing (CRITICAL)`);
     }
-    
-    if (missingContent.headings.count > 0) {
-      issues.push(`${missingContent.headings.count} headings not in raw HTML`);
+    if (missingContent.headings?.count > 0) {
+      issues.push(`${missingContent.headings.count} headings missing`);
     }
-    
-    if (missingContent.textContent.count > 0) {
-      const totalChars = missingContent.textContent.totalMissingChars;
-      issues.push(`${missingContent.textContent.count} text blocks missing (~${Math.round(totalChars/1000)}k chars)`);
+    if (missingContent.navigation?.count > 0) {
+      issues.push(`${missingContent.navigation.count} navigation links missing`);
     }
-    
-    if (missingContent.interactiveElements.count > 0) {
+    if (missingContent.interactiveElements?.count > 0) {
       issues.push(`${missingContent.interactiveElements.count} interactive elements missing`);
     }
     
-    if (missingContent.criticalData.count > 0) {
-      issues.push(`${missingContent.criticalData.count} pricing/data elements missing`);
-    }
-    
-    // Generate the plain-language "Bottom Line" summary
-    const bottomLine = this.generateBottomLineSummary(missingContent);
-    
-    if (issues.length === 0) {
-      return 'Content appears accessible to LLMs - no significant missing elements detected';
-    }
-    
-    const examples = [];
-    if (missingContent.navigation.examples.length > 0) {
-      examples.push(`Nav: "${missingContent.navigation.examples[0]}"`);
-    }
-    if (missingContent.headings.examples.length > 0) {
-      examples.push(`Heading: "${missingContent.headings.examples[0]}"`);
-    }
-    if (missingContent.criticalData.examples.length > 0) {
-      examples.push(`Price: "${missingContent.criticalData.examples[0]}"`);
-    }
-    
-    const exampleText = examples.length > 0 ? ` (e.g., ${examples.slice(0, 2).join(', ')})` : '';
-    const technicalSummary = `LLM Impact: ${issues.join(' | ')}${exampleText}`;
-    
-    // Combine technical and plain-language summaries
-    return `${technicalSummary} | BOTTOM LINE: ${bottomLine}`;
+    return `LLM Impact: ${issues.join(' | ')}`;
   }
 
-  generateBottomLineSummary(missingContent) {
-    const willMiss = [];
-    const willStillGet = [];
-    
-    // What LLMs will miss
-    if (missingContent.criticalData.count > 0) {
-      willMiss.push(`actual prices/costs (${missingContent.criticalData.count} missing - CRITICAL)`);
-    }
-    
-    if (missingContent.headings.count > 0) {
-      willMiss.push(`page structure/headings (${missingContent.headings.count} missing)`);
-    }
-    
-    if (missingContent.navigation.count > 0) {
-      willMiss.push(`some navigation options (${missingContent.navigation.count} links)`);
-    }
-    
-    if (missingContent.textContent.totalMissingChars > 5000) {
-      willMiss.push(`significant content blocks (~${Math.round(missingContent.textContent.totalMissingChars/1000)}k characters)`);
-    }
-    
-    if (missingContent.interactiveElements.count > 0) {
-      willMiss.push(`interactive functionality (${missingContent.interactiveElements.count} elements - not critical for content)`);
-    }
-    
-    // What LLMs will still get (based on what's NOT missing)
-    if (missingContent.headings.count === 0) {
-      willStillGet.push('page structure and headings');
-    }
-    
-    if (missingContent.textContent.totalMissingChars < 2000) {
-      willStillGet.push('most descriptive text');
-    }
-    
-    if (missingContent.criticalData.count === 0) {
-      willStillGet.push('pricing and key data');
-    }
-    
-    if (missingContent.navigation.count <= 2) {
-      willStillGet.push('main navigation');
-    }
-    
-    // Always add these likely positives
-    willStillGet.push('basic page information');
-    if (missingContent.textContent.count < 3) {
-      willStillGet.push('general content');
-    }
-    
-    // Format the bottom line
-    let summary = '';
-    
-    if (willMiss.length === 0) {
-      summary = 'LLMs can access virtually all content without JavaScript';
-    } else {
-      summary = `LLMs will miss: ${willMiss.join(', ')}`;
-      
-      if (willStillGet.length > 0) {
-        summary += ` | BUT will still get: ${willStillGet.join(', ')}`;
-      }
-    }
-    
-    return summary;
-  }
-
-  generateLLMFocusedRecommendations(missingContent) {
+  generateLLMFocusedRecommendationsFixed(missingContent) {
     const recommendations = [];
-    const totalIssues = missingContent.navigation.count + missingContent.headings.count + 
-                       missingContent.textContent.count + missingContent.interactiveElements.count + 
-                       missingContent.criticalData.count;
+    const totalIssues = 
+      (missingContent.navigation?.count || 0) + 
+      (missingContent.headings?.count || 0) + 
+      (missingContent.criticalData?.count || 0) +
+      (missingContent.interactiveElements?.count || 0);
     
     if (totalIssues === 0) {
       recommendations.push('✅ Excellent LLM accessibility - all content available in raw HTML');
-      recommendations.push('🤖 LLMs can access this content without JavaScript rendering');
       return recommendations;
     }
     
-    if (missingContent.criticalData.count > 0) {
-      recommendations.push(`💰 CRITICAL: ${missingContent.criticalData.count} pricing/data elements require JavaScript - essential for analysis`);
+    if (missingContent.criticalData?.count > 0) {
+      recommendations.push(`💰 CRITICAL: ${missingContent.criticalData.count} pricing/data elements require JavaScript`);
     }
     
-    if (missingContent.headings.count > 0) {
-      recommendations.push(`📝 HIGH: ${missingContent.headings.count} headings missing from raw HTML - affects content structure understanding`);
+    if (missingContent.headings?.count > 0) {
+      recommendations.push(`📝 HIGH: ${missingContent.headings.count} headings missing from raw HTML`);
     }
     
-    if (missingContent.navigation.count > 0) {
-      recommendations.push(`🧭 MEDIUM: ${missingContent.navigation.count} navigation links require JavaScript - impacts site discovery`);
-    }
-    
-    if (missingContent.textContent.count > 0) {
-      const chars = missingContent.textContent.totalMissingChars;
-      recommendations.push(`📄 MEDIUM: ${Math.round(chars/1000)}k characters of content missing - significant for comprehensive analysis`);
-    }
-    
-    if (missingContent.interactiveElements.count > 0) {
-      recommendations.push(`🔧 LOW: ${missingContent.interactiveElements.count} interactive elements require JavaScript - functional but not content-critical`);
-    }
-    
-    // Overall recommendation
-    if (totalIssues > 5) {
-      recommendations.push('🚨 RECOMMENDATION: JavaScript rendering essential for LLM access - use Playwright/Puppeteer');
-    } else if (totalIssues > 2) {
+    if (totalIssues > 3) {
+      recommendations.push('🚨 RECOMMENDATION: JavaScript rendering essential for LLM access');
+    } else if (totalIssues > 0) {
       recommendations.push('⚠️ RECOMMENDATION: Consider JavaScript rendering for complete content access');
-    } else {
-      recommendations.push('✅ RECOMMENDATION: Most content accessible without JavaScript rendering');
     }
     
     return recommendations;
   }
 
+  // FIXED: Better HTML cleaning that preserves meaningful content
   cleanHtml(html) {
     return html
+      // Remove scripts and styles first
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
       .replace(/<!--[\s\S]*?-->/g, '')
-      .replace(/<[^>]*>/g, '')
+      // Remove HTML tags but preserve content
+      .replace(/<[^>]*>/g, ' ')
+      // Normalize whitespace but don't be too aggressive
       .replace(/\s+/g, ' ')
       .trim();
-  }
-
-  async detectFrameworks(html, page) {
-    const frameworks = [];
-    const patterns = {
-      'React': [/react/i, /_reactInternalFiber/i, /data-reactroot/i, /__webpack_require__/],
-      'Vue.js': [/vue(?:\.js)?/i, /data-v-[a-f0-9]/i, /\[data-v-/i],
-      'Angular': [/angular/i, /ng-version/i, /ng-app/i, /\[ng-/i],
-      'Next.js': [/__NEXT_DATA__/i, /_next\/static/i, /next\.js/i],
-      'Nuxt.js': [/__NUXT__/i, /_nuxt\//i],
-      'Svelte': [/svelte/i, /s-[A-Za-z0-9]/],
-      'Alpine.js': [/x-data/i, /alpine/i],
-      'jQuery': [/jquery/i, /\$\(/]
-    };
-
-    for (const [name, regexes] of Object.entries(patterns)) {
-      if (regexes.some(regex => regex.test(html))) {
-        frameworks.push(name);
-      }
-    }
-
-    // Try to detect frameworks via JavaScript
-    try {
-      const jsFrameworks = await page.evaluate(() => {
-        const detected = [];
-        if (window.React) detected.push('React');
-        if (window.Vue) detected.push('Vue.js');
-        if (window.angular) detected.push('Angular');
-        if (window.jQuery || window.$) detected.push('jQuery');
-        return detected;
-      });
-      
-      jsFrameworks.forEach(fw => {
-        if (!frameworks.includes(fw)) {
-          frameworks.push(fw);
-        }
-      });
-    } catch (e) {
-      // Ignore JS detection errors
-    }
-
-    return frameworks;
   }
 
   async getPerformanceMetrics(page) {
@@ -1217,24 +1134,36 @@ class AdvancedJSAnalyzer {
     };
   }
 
+  // FIXED: Corrected scoring logic
   calculateScore(browsers, frameworks, avgDifferencePercent) {
     let score = 100;
     
-    if (avgDifferencePercent > 50) score -= 40;
-    else if (avgDifferencePercent > 25) score -= 30;
-    else if (avgDifferencePercent > 10) score -= 20;
+    // FIXED: More reasonable penalties
+    if (avgDifferencePercent > 100) score -= 40;
+    else if (avgDifferencePercent > 50) score -= 30;
+    else if (avgDifferencePercent > 25) score -= 20;
+    else if (avgDifferencePercent > 10) score -= 10;
     
-    if (frameworks.length > 0) {
-      const modernFrameworks = ['React', 'Vue.js', 'Angular', 'Next.js', 'Nuxt.js', 'Svelte'];
-      const modernCount = frameworks.filter(f => modernFrameworks.includes(f)).length;
-      score -= modernCount * 15;
+    // FIXED: Framework penalties only for confirmed modern frameworks
+    const confirmedModernFrameworks = frameworks.filter(f => 
+      ['React', 'Vue.js', 'Angular', 'Next.js', 'Nuxt.js', 'Svelte'].includes(f)
+    );
+    score -= confirmedModernFrameworks.length * 10;
+    
+    // FIXED: Significant change penalty should align with content analysis
+    const hasSignificantChanges = browsers.some(b => b.significantChange);
+    const hasActualMissingContent = browsers.some(b => 
+      b.jsRenderedContent?.trulyMissingContent && 
+      Object.values(b.jsRenderedContent.trulyMissingContent).some(category => category.count > 0)
+    );
+    
+    if (hasSignificantChanges && hasActualMissingContent) {
+      score -= 25;
     }
     
-    const hasSignificantChanges = browsers.some(b => b.significantChange);
-    if (hasSignificantChanges) score -= 25;
-    
+    // FIXED: Content length check
     const avgRawContent = browsers.reduce((sum, b) => sum + (b.rawContentLength || 0), 0) / browsers.length;
-    if (avgRawContent < 500) score -= 20;
+    if (avgRawContent < 500) score -= 15;
     
     return Math.max(0, Math.min(100, Math.round(score)));
   }
