@@ -795,7 +795,8 @@ class AdvancedJSAnalyzer {
       console.log(`    Rendered text sample: "${contentSamples.renderedTextSample.substring(0, 200)}..."`);
       
       // Get content that's actually missing from raw HTML (not just hidden by CSS)
-      const trulyMissingContent = await page.evaluate((rawHtmlContent, rawTextContent) => {
+      const trulyMissingContent = await page.evaluate((contentData) => {
+        const { rawHtmlContent, rawTextContent } = contentData;
         const missing = {
           navigation: { missingLinks: [], missingText: [] },
           headings: { missingHeadings: [] },
