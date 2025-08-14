@@ -753,69 +753,134 @@ class AdvancedJSAnalyzer {
     console.log(`  🔍 Analyzing truly missing content (LLM-relevant only)...`);
     console.log(`  📏 Raw text length: ${rawText.length}`);
     console.log(`  📏 Rendered text length: ${renderedText.length}`);
+    console.log(`  📊 Content change: ${renderedText.length - rawText.length} chars (${Math.round(((renderedText.length - rawText.length) / rawText.length) * 100)}%)`);
     
     try {
       // Get raw HTML to check what's actually in the DOM vs what's visible
       console.log(`  🔍 Getting raw DOM structure...`);
       const rawHtml = await page.evaluate(() => document.documentElement.outerHTML);
       
+      console.log(`  📏 Raw HTML length: ${rawHtml.length}`);
+      console.log(`  📏 Rendered HTML length: ${rawHtml.length}`);
+      
+      // DEBUG: Let's see what content is actually different
+      const contentSamples = await page.evaluate((rawTextContent) => {
+        const debug = {
+          rawTextSample: rawTextContent.substring(0, 500),
+          renderedTextSample: document.body?.innerText?.substring(0, 500) || 'No body text',
+          totalVisibleElements: document.querySelectorAll('*').length,
+          visibleTextElements: document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, div').length,
+          visibleNavElements: document.querySelectorAll('nav, .nav, .navigation, .menu, header a').length,
+          visibleHeadings: Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6')).map(h => h.innerText?.trim()).slice(0, 5),
+          visibleNavText: Array.from(document.querySelectorAll('nav a, .nav a, .navigation a, .menu a, header a')).map(a => a.innerText?.trim()).slice(0, 5),
+          visiblePrices: Array.from(document.querySelectorAll('[class*="price"], [class*="cost"], .currency, [data-price]')).map(p => p.innerText?.trim()).slice(0, 5),
+          bodyStructure: {
+            mainElements: document.querySelectorAll('main').length,
+            articles: document.querySelectorAll('article').length,
+            sections: document.querySelectorAll('section').length,
+            contentDivs: document.querySelectorAll('.content, [class*="content"]').length
+          }
+        };
+        return debug;
+      }, rawText);
+      
+      console.log(`  🔍 DEBUG INFO:`);
+      console.log(`    Total visible elements: ${contentSamples.totalVisibleElements}`);
+      console.log(`    Visible text elements: ${contentSamples.visibleTextElements}`);
+      console.log(`    Visible nav elements: ${contentSamples.visibleNavElements}`);
+      console.log(`    Visible headings: ${JSON.stringify(contentSamples.visibleHeadings)}`);
+      console.log(`    Visible nav text: ${JSON.stringify(contentSamples.visibleNavText)}`);
+      console.log(`    Body structure: ${JSON.stringify(contentSamples.bodyStructure)}`);
+      console.log(`    Raw text sample: "${contentSamples.rawTextSample.substring(0, 200)}..."`);
+      console.log(`    Rendered text sample: "${contentSamples.renderedTextSample.substring(0, 200)}..."`);
+      
       // Get content that's actually missing from raw HTML (not just hidden by CSS)
-      const trulyMissingContent = await page.evaluate((rawHtmlContent) => {
+      const trulyMissingContent = await page.evaluate((rawHtmlContent, rawTextContent) => {
         const missing = {
           navigation: { missingLinks: [], missingText: [] },
           headings: { missingHeadings: [] },
           textContent: { missingParagraphs: [], significantTextBlocks: [] },
           interactiveElements: { missingButtons: [], missingForms: [] },
-          criticalData: { missingPrices: [], missingContent: [] }
+          criticalData: { missingPrices: [], missingContent: [] },
+          debugInfo: {
+            rawHtmlLength: rawHtmlContent.length,
+            rawTextLength: rawTextContent.length,
+            renderedTextLength: document.body?.innerText?.length || 0,
+            searchExamples: []
+          }
         };
 
-        // Check navigation - only count if links/text truly don't exist in raw HTML
+        // DEBUG: Check navigation - with detailed logging
         const visibleNavLinks = document.querySelectorAll('nav a, .nav a, .navigation a, .menu a, header a');
-        Array.from(visibleNavLinks).forEach(link => {
+        console.log(`DEBUG: Found ${visibleNavLinks.length} visible nav links`);
+        
+        Array.from(visibleNavLinks).forEach((link, index) => {
           const linkText = link.innerText?.trim();
           const href = link.href;
           if (linkText && linkText.length > 2) {
-            // Check if this link text appears anywhere in raw HTML
-            if (!rawHtmlContent.toLowerCase().includes(linkText.toLowerCase().substring(0, 15))) {
+            const searchText = linkText.toLowerCase().substring(0, 15);
+            const foundInRawHtml = rawHtmlContent.toLowerCase().includes(searchText);
+            const foundInRawText = rawTextContent.toLowerCase().includes(searchText);
+            
+            console.log(`DEBUG Nav ${index}: "${linkText}" -> HTML: ${foundInRawHtml}, Text: ${foundInRawText}`);
+            missing.debugInfo.searchExamples.push(`Nav "${linkText}": HTML=${foundInRawHtml}, Text=${foundInRawText}`);
+            
+            if (!foundInRawHtml && !foundInRawText) {
               missing.navigation.missingLinks.push(linkText.substring(0, 30));
             }
           }
         });
 
-        // Check headings - only count if heading text truly missing from raw HTML
+        // DEBUG: Check headings - with detailed logging
         const visibleHeadings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
-        Array.from(visibleHeadings).forEach(heading => {
+        console.log(`DEBUG: Found ${visibleHeadings.length} visible headings`);
+        
+        Array.from(visibleHeadings).forEach((heading, index) => {
           const headingText = heading.innerText?.trim();
           if (headingText && headingText.length > 3) {
-            // Check if heading text exists in raw HTML
-            if (!rawHtmlContent.toLowerCase().includes(headingText.toLowerCase().substring(0, 20))) {
+            const searchText = headingText.toLowerCase().substring(0, 20);
+            const foundInRawHtml = rawHtmlContent.toLowerCase().includes(searchText);
+            const foundInRawText = rawTextContent.toLowerCase().includes(searchText);
+            
+            console.log(`DEBUG Heading ${index}: "${headingText}" -> HTML: ${foundInRawHtml}, Text: ${foundInRawText}`);
+            missing.debugInfo.searchExamples.push(`Heading "${headingText}": HTML=${foundInRawHtml}, Text=${foundInRawText}`);
+            
+            if (!foundInRawHtml && !foundInRawText) {
               missing.headings.missingHeadings.push(headingText.substring(0, 60));
             }
           }
         });
 
-        // Check for significant text blocks that are truly missing
-        const textBlocks = document.querySelectorAll('p, .content, .description, .summary, article');
-        Array.from(textBlocks).forEach(block => {
-          const blockText = block.innerText?.trim();
-          if (blockText && blockText.length > 100) {
-            // Sample first 50 chars to check if this content exists in raw HTML
-            const sample = blockText.substring(0, 50).toLowerCase();
-            if (!rawHtmlContent.toLowerCase().includes(sample)) {
-              missing.textContent.missingParagraphs.push({
-                preview: blockText.substring(0, 100),
-                length: blockText.length
-              });
-            }
+        // DEBUG: Check for significant text differences
+        const renderedBodyText = document.body?.innerText || '';
+        const textDifference = renderedBodyText.length - rawTextContent.length;
+        console.log(`DEBUG: Text difference: ${textDifference} characters`);
+        
+        // Sample random sections of rendered text to see if they exist in raw
+        const renderedSections = [];
+        for (let i = 0; i < Math.min(5, Math.floor(renderedBodyText.length / 1000)); i++) {
+          const start = i * 1000;
+          const sample = renderedBodyText.substring(start, start + 100).trim();
+          if (sample.length > 20) {
+            const foundInRaw = rawTextContent.toLowerCase().includes(sample.toLowerCase().substring(0, 50));
+            renderedSections.push({ sample, foundInRaw });
+            console.log(`DEBUG Text Section ${i}: "${sample.substring(0, 50)}..." -> Found in raw: ${foundInRaw}`);
           }
-        });
+        }
+        
+        missing.debugInfo.renderedSections = renderedSections;
 
         // Check for missing interactive elements (buttons with meaningful text)
         const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"], .btn');
-        Array.from(buttons).forEach(button => {
+        console.log(`DEBUG: Found ${buttons.length} buttons`);
+        
+        Array.from(buttons).slice(0, 10).forEach((button, index) => {
           const buttonText = button.innerText?.trim() || button.value?.trim();
           if (buttonText && buttonText.length > 2) {
-            if (!rawHtmlContent.toLowerCase().includes(buttonText.toLowerCase())) {
+            const foundInRaw = rawHtmlContent.toLowerCase().includes(buttonText.toLowerCase());
+            console.log(`DEBUG Button ${index}: "${buttonText}" -> Found in raw: ${foundInRaw}`);
+            
+            if (!foundInRaw) {
               missing.interactiveElements.missingButtons.push(buttonText.substring(0, 30));
             }
           }
@@ -823,16 +888,20 @@ class AdvancedJSAnalyzer {
 
         // Check for missing pricing/data content
         const priceElements = document.querySelectorAll('[class*="price"], [class*="cost"], .currency, [data-price]');
-        Array.from(priceElements).forEach(el => {
+        console.log(`DEBUG: Found ${priceElements.length} price elements`);
+        
+        Array.from(priceElements).slice(0, 10).forEach((el, index) => {
           const priceText = el.innerText?.trim();
           if (priceText && /[\$£€¥₹]|\d+\.\d{2}/.test(priceText)) {
-            if (!rawHtmlContent.toLowerCase().includes(priceText.toLowerCase())) {
+            const foundInRaw = rawHtmlContent.toLowerCase().includes(priceText.toLowerCase());
+            console.log(`DEBUG Price ${index}: "${priceText}" -> Found in raw: ${foundInRaw}`);
+            
+            if (!foundInRaw) {
               missing.criticalData.missingPrices.push(priceText.substring(0, 20));
             }
           }
         });
 
-        // Count significant missing content only
         return {
           navigation: {
             count: missing.navigation.missingLinks.length,
@@ -854,11 +923,18 @@ class AdvancedJSAnalyzer {
           criticalData: {
             count: missing.criticalData.missingPrices.length,
             examples: missing.criticalData.missingPrices.slice(0, 3)
-          }
+          },
+          debugInfo: missing.debugInfo
         };
-      }, rawHtml);
+      }, rawHtml, rawText);
 
       console.log(`  ✅ True missing content analysis completed`);
+      console.log(`  📊 Missing navigation: ${trulyMissingContent.navigation.count}`);
+      console.log(`  📊 Missing headings: ${trulyMissingContent.headings.count}`);
+      console.log(`  📊 Missing text content: ${trulyMissingContent.textContent.count}`);
+      console.log(`  📊 Missing interactive: ${trulyMissingContent.interactiveElements.count}`);
+      console.log(`  📊 Missing critical data: ${trulyMissingContent.criticalData.count}`);
+      console.log(`  🔍 Debug search examples: ${JSON.stringify(trulyMissingContent.debugInfo.searchExamples.slice(0, 3))}`);
 
       return {
         summary: this.generateLLMFocusedSummary(trulyMissingContent),
