@@ -1,775 +1,4 @@
-visibleHeadings: Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6')).map(h => h.innerText?.trim()).slice(0, 5),
-          visibleNavText: Array.from(document.querySelectorAll('nav a, .nav a, .navigation a, .menu a, header a')).map(a => a.innerText?.trim()).slice(0, 5),
-          visiblePrices: Array.from(document.querySelectorAll('[class*="price"], [class*="cost"], .currency, [data-price]')).map(p => p.innerText?.trim()).slice(0, 5),
-          bodyStructure: {
-            mainElements: document.querySelectorAll('main').length,
-            articles: document.querySelectorAll('article').length,
-            sections: document.querySelectorAll('section').length,
-            contentDivs: document.querySelectorAll('.content, [class*="content"]').length
-          }
-        };
-        return debug;
-      }, rawText);
-      
-      console.log(`  🔍 DEBUG INFO:`);
-      console.log(`    Total visible elements: ${contentSamples.totalVisibleElements}`);
-      console.log(`    Visible text elements: ${contentSamples.visibleTextElements}`);
-      console.log(`    Visible nav elements: ${contentSamples.visibleNavElements}`);
-      console.log(`    Visible headings: ${JSON.stringify(contentSamples.visibleHeadings)}`);
-      console.log(`    Visible nav text: ${JSON.stringify(contentSamples.visibleNavText)}`);
-      console.log(`    Body structure: ${JSON.stringify(contentSamples.bodyStructure)}`);
-      console.log(`    Raw text sample: "${contentSamples.rawTextSample.substring(0, 200)}..."`);
-      console.log(`    Rendered text sample: "${contentSamples.renderedTextSample.substring(0, 200)}..."`);
-      
-      // Get content that's actually missing from raw HTML (not just hidden by CSS)
-      const trulyMissingContent = await page.evaluate((contentData) => {
-        const { rawHtmlContent, rawTextContent } = contentData;
-        const missing = {
-          navigation: { missingLinks: [], missingText: [] },
-          headings: { missingHeadings: [] },
-          textContent: { missingParagraphs: [], significantTextBlocks: [] },
-          interactiveElements: { missingButtons: [], missingForms: [] },
-          criticalData: { missingPrices: [], missingContent: [] },
-          debugInfo: {
-            rawHtmlLength: rawHtmlContent.length,
-            rawTextLength: rawTextContent.length,
-            renderedTextLength: document.body?.innerText?.length || 0,
-            searchExamples: []
-          }
-        };
-
-        // DEBUG: Check navigation - with detailed logging
-        const visibleNavLinks = document.querySelectorAll('nav a, .nav a, .navigation a, .menu a, header a');
-        console.log(`DEBUG: Found ${visibleNavLinks.length} visible nav links`);
-        
-        Array.from(visibleNavLinks).forEach((link, index) => {
-          const linkText = link.innerText?.trim();
-          const href = link.href;
-          if (linkText && linkText.length > 2) {
-            const searchText = linkText.toLowerCase().substring(0, 15);
-            const foundInRawHtml = rawHtmlContent.toLowerCase().includes(searchText);
-            const foundInRawText = rawTextContent.toLowerCase().includes(searchText);
-            
-            console.log(`DEBUG Nav ${index}: "${linkText}" -> HTML: ${foundInRawHtml}, Text: ${foundInRawText}`);
-            missing.debugInfo.searchExamples.push(`Nav "${linkText}": HTML=${foundInRawHtml}, Text=${foundInRawText}`);
-            
-            if (!foundInRawHtml && !foundInRawText) {
-              missing.navigation.missingLinks.push(linkText.substring(0, 30));
-            }
-          }
-        });
-
-        // DEBUG: Check headings - with detailed logging
-        const visibleHeadings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
-        console.log(`DEBUG: Found ${visibleHeadings.length} visible headings`);
-        
-        Array.from(visibleHeadings).forEach((heading, index) => {
-          const headingText = heading.innerText?.trim();
-          if (headingText && headingText.length > 3) {
-            const searchText = headingText.toLowerCase().substring(0, 20);
-            const foundInRawHtml = rawHtmlContent.toLowerCase().includes(searchText);
-            const foundInRawText = rawTextContent.toLowerCase().includes(searchText);
-            
-            console.log(`DEBUG Heading ${index}: "${headingText}" -> HTML: ${foundInRawHtml}, Text: ${foundInRawText}`);
-            missing.debugInfo.searchExamples.push(`Heading "${headingText}": HTML=${foundInRawHtml}, Text=${foundInRawText}`);
-            
-            if (!foundInRawHtml && !foundInRawText) {
-              missing.headings.missingHeadings.push(headingText.substring(0, 60));
-            }
-          }
-        });
-
-        // DEBUG: Check for significant text differences
-        const renderedBodyText = document.body?.innerText || '';
-        const textDifference = renderedBodyText.length - rawTextContent.length;
-        console.log(`DEBUG: Text difference: ${textDifference} characters`);
-        
-        // Sample random sections of rendered text to see if they exist in raw
-        const renderedSections = [];
-        for (let i = 0; i < Math.min(5, Math.floor(renderedBodyText.length / 1000)); i++) {
-          const start = i * 1000;
-          const sample = renderedBodyText.substring(start, start + 100).trim();
-          if (sample.length > 20) {
-            const foundInRaw = rawTextContent.toLowerCase().includes(sample.toLowerCase().substring(0, 50));
-            renderedSections.push({ sample, foundInRaw });
-            console.log(`DEBUG Text Section ${i}: "${sample.substring(0, 50)}..." -> Found in raw: ${foundInRaw}`);
-          }
-        }
-        
-        missing.debugInfo.renderedSections = renderedSections;
-
-        // Check for missing interactive elements (buttons with meaningful text)
-        const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"], .btn');
-        console.log(`DEBUG: Found ${buttons.length} buttons`);
-        
-        Array.from(buttons).slice(0, 10).forEach((button, index) => {
-          const buttonText = button.innerText?.trim() || button.value?.trim();
-          if (buttonText && buttonText.length > 2) {
-            const foundInRaw = rawHtmlContent.toLowerCase().includes(buttonText.toLowerCase());
-            console.log(`DEBUG Button ${index}: "${buttonText}" -> Found in raw: ${foundInRaw}`);
-            
-            if (!foundInRaw) {
-              missing.interactiveElements.missingButtons.push(buttonText.substring(0, 30));
-            }
-          }
-        });
-
-        // Check for missing pricing/data content
-        const priceElements = document.querySelectorAll('[class*="price"], [class*="cost"], .currency, [data-price]');
-        console.log(`DEBUG: Found ${priceElements.length} price elements`);
-        
-        Array.from(priceElements).slice(0, 10).forEach((el, index) => {
-          const priceText = el.innerText?.trim();
-          if (priceText && /[\$£€¥₹]|\d+\.\d{2}/.test(priceText)) {
-            const foundInRaw = rawHtmlContent.toLowerCase().includes(priceText.toLowerCase());
-            console.log(`DEBUG Price ${index}: "${priceText}" -> Found in raw: ${foundInRaw}`);
-            
-            if (!foundInRaw) {
-              missing.criticalData.missingPrices.push(priceText.substring(0, 20));
-            }
-          }
-        });
-
-        return {
-          navigation: {
-            count: missing.navigation.missingLinks.length,
-            examples: missing.navigation.missingLinks.slice(0, 3)
-          },
-          headings: {
-            count: missing.headings.missingHeadings.length,
-            examples: missing.headings.missingHeadings.slice(0, 3)
-          },
-          textContent: {
-            count: missing.textContent.missingParagraphs.length,
-            totalMissingChars: missing.textContent.missingParagraphs.reduce((sum, p) => sum + p.length, 0),
-            examples: missing.textContent.missingParagraphs.slice(0, 2).map(p => p.preview)
-          },
-          interactiveElements: {
-            count: missing.interactiveElements.missingButtons.length,
-            examples: missing.interactiveElements.missingButtons.slice(0, 3)
-          },
-          criticalData: {
-            count: missing.criticalData.missingPrices.length,
-            examples: missing.criticalData.missingPrices.slice(0, 3)
-          },
-          debugInfo: missing.debugInfo
-        };
-      }, { rawHtmlContent: rawHtml, rawTextContent: rawText });
-
-      console.log(`  ✅ True missing content analysis completed`);
-      console.log(`  📊 Missing navigation: ${trulyMissingContent.navigation.count}`);
-      console.log(`  📊 Missing headings: ${trulyMissingContent.headings.count}`);
-      console.log(`  📊 Missing text content: ${trulyMissingContent.textContent.count}`);
-      console.log(`  📊 Missing interactive: ${trulyMissingContent.interactiveElements.count}`);
-      console.log(`  📊 Missing critical data: ${trulyMissingContent.criticalData.count}`);
-      console.log(`  🔍 Debug search examples: ${JSON.stringify(trulyMissingContent.debugInfo.searchExamples.slice(0, 3))}`);
-
-      return {
-        summary: this.generateLLMFocusedSummary(trulyMissingContent),
-        trulyMissingContent: trulyMissingContent,
-        recommendations: this.generateLLMFocusedRecommendations(trulyMissingContent)
-      };
-
-    } catch (error) {
-      console.error(`  ❌ LLM-focused content analysis failed: ${error.message}`);
-      console.error(`  ❌ Stack trace: ${error.stack}`);
-      return {
-        error: error.message,
-        summary: 'Unable to analyze LLM-accessible content',
-        recommendations: ['Manual content inspection required']
-      };
-    }
-  }
-
-  generateLLMFocusedSummary(missingContent) {
-    // Generate the technical summary
-    const issues = [];
-    
-    if (missingContent.navigation.count > 0) {
-      issues.push(`${missingContent.navigation.count} navigation links truly missing from HTML`);
-    }
-    
-    if (missingContent.headings.count > 0) {
-      issues.push(`${missingContent.headings.count} headings not in raw HTML`);
-    }
-    
-    if (missingContent.textContent.count > 0) {
-      const totalChars = missingContent.textContent.totalMissingChars;
-      issues.push(`${missingContent.textContent.count} text blocks missing (~${Math.round(totalChars/1000)}k chars)`);
-    }
-    
-    if (missingContent.interactiveElements.count > 0) {
-      issues.push(`${missingContent.interactiveElements.count} interactive elements missing`);
-    }
-    
-    if (missingContent.criticalData.count > 0) {
-      issues.push(`${missingContent.criticalData.count} pricing/data elements missing`);
-    }
-    
-    // Generate the plain-language "Bottom Line" summary
-    const bottomLine = this.generateBottomLineSummary(missingContent);
-    
-    if (issues.length === 0) {
-      return 'Content appears accessible to LLMs - no significant missing elements detected';
-    }
-    
-    const examples = [];
-    if (missingContent.navigation.examples.length > 0) {
-      examples.push(`Nav: "${missingContent.navigation.examples[0]}"`);
-    }
-    if (missingContent.headings.examples.length > 0) {
-      examples.push(`Heading: "${missingContent.headings.examples[0]}"`);
-    }
-    if (missingContent.criticalData.examples.length > 0) {
-      examples.push(`Price: "${missingContent.criticalData.examples[0]}"`);
-    }
-    
-    const exampleText = examples.length > 0 ? ` (e.g., ${examples.slice(0, 2).join(', ')})` : '';
-    const technicalSummary = `LLM Impact: ${issues.join(' | ')}${exampleText}`;
-    
-    // Combine technical and plain-language summaries
-    return `${technicalSummary} | BOTTOM LINE: ${bottomLine}`;
-  }
-
-  generateBottomLineSummary(missingContent) {
-    const willMiss = [];
-    const willStillGet = [];
-    
-    // What LLMs will miss
-    if (missingContent.criticalData.count > 0) {
-      willMiss.push(`actual prices/costs (${missingContent.criticalData.count} missing - CRITICAL)`);
-    }
-    
-    if (missingContent.headings.count > 0) {
-      willMiss.push(`page structure/headings (${missingContent.headings.count} missing)`);
-    }
-    
-    if (missingContent.navigation.count > 0) {
-      willMiss.push(`some navigation options (${missingContent.navigation.count} links)`);
-    }
-    
-    if (missingContent.textContent.totalMissingChars > 5000) {
-      willMiss.push(`significant content blocks (~${Math.round(missingContent.textContent.totalMissingChars/1000)}k characters)`);
-    }
-    
-    if (missingContent.interactiveElements.count > 0) {
-      willMiss.push(`interactive functionality (${missingContent.interactiveElements.count} elements - not critical for content)`);
-    }
-    
-    // What LLMs will still get (based on what's NOT missing)
-    if (missingContent.headings.count === 0) {
-      willStillGet.push('page structure and headings');
-    }
-    
-    if (missingContent.textContent.totalMissingChars < 2000) {
-      willStillGet.push('most descriptive text');
-    }
-    
-    if (missingContent.criticalData.count === 0) {
-      willStillGet.push('pricing and key data');
-    }
-    
-    if (missingContent.navigation.count <= 2) {
-      willStillGet.push('main navigation');
-    }
-    
-    // Always add these likely positives
-    willStillGet.push('basic page information');
-    if (missingContent.textContent.count < 3) {
-      willStillGet.push('general content');
-    }
-    
-    // Format the bottom line
-    let summary = '';
-    
-    if (willMiss.length === 0) {
-      summary = 'LLMs can access virtually all content without JavaScript';
-    } else {
-      summary = `LLMs will miss: ${willMiss.join(', ')}`;
-      
-      if (willStillGet.length > 0) {
-        summary += ` | BUT will still get: ${willStillGet.join(', ')}`;
-      }
-    }
-    
-    return summary;
-  }
-
-  generateLLMFocusedRecommendations(missingContent) {
-    const recommendations = [];
-    const totalIssues = missingContent.navigation.count + missingContent.headings.count + 
-                       missingContent.textContent.count + missingContent.interactiveElements.count + 
-                       missingContent.criticalData.count;
-    
-    if (totalIssues === 0) {
-      recommendations.push('✅ Excellent LLM accessibility - all content available in raw HTML');
-      recommendations.push('🤖 LLMs can access this content without JavaScript rendering');
-      return recommendations;
-    }
-    
-    if (missingContent.criticalData.count > 0) {
-      recommendations.push(`💰 CRITICAL: ${missingContent.criticalData.count} pricing/data elements require JavaScript - essential for analysis`);
-    }
-    
-    if (missingContent.headings.count > 0) {
-      recommendations.push(`📝 HIGH: ${missingContent.headings.count} headings missing from raw HTML - affects content structure understanding`);
-    }
-    
-    if (missingContent.navigation.count > 0) {
-      recommendations.push(`🧭 MEDIUM: ${missingContent.navigation.count} navigation links require JavaScript - impacts site discovery`);
-    }
-    
-    if (missingContent.textContent.count > 0) {
-      const chars = missingContent.textContent.totalMissingChars;
-      recommendations.push(`📄 MEDIUM: ${Math.round(chars/1000)}k characters of content missing - significant for comprehensive analysis`);
-    }
-    
-    if (missingContent.interactiveElements.count > 0) {
-      recommendations.push(`🔧 LOW: ${missingContent.interactiveElements.count} interactive elements require JavaScript - functional but not content-critical`);
-    }
-    
-    // Overall recommendation
-    if (totalIssues > 5) {
-      recommendations.push('🚨 RECOMMENDATION: JavaScript rendering essential for LLM access - use Playwright/Puppeteer');
-    } else if (totalIssues > 2) {
-      recommendations.push('⚠️ RECOMMENDATION: Consider JavaScript rendering for complete content access');
-    } else {
-      recommendations.push('✅ RECOMMENDATION: Most content accessible without JavaScript rendering');
-    }
-    
-    return recommendations;
-  }
-
-  cleanHtml(html) {
-    return html
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .replace(/<[^>]*>/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  async detectFrameworks(html, page) {
-    const frameworks = [];
-    const patterns = {
-      'React': [/react/i, /_reactInternalFiber/i, /data-reactroot/i, /__webpack_require__/],
-      'Vue.js': [/vue(?:\.js)?/i, /data-v-[a-f0-9]/i, /\[data-v-/i],
-      'Angular': [/angular/i, /ng-version/i, /ng-app/i, /\[ng-/i],
-      'Next.js': [/__NEXT_DATA__/i, /_next\/static/i, /next\.js/i],
-      'Nuxt.js': [/__NUXT__/i, /_nuxt\//i],
-      'Svelte': [/svelte/i, /s-[A-Za-z0-9]/],
-      'Alpine.js': [/x-data/i, /alpine/i],
-      'jQuery': [/jquery/i, /\$\(/]
-    };
-
-    for (const [name, regexes] of Object.entries(patterns)) {
-      if (regexes.some(regex => regex.test(html))) {
-        frameworks.push(name);
-      }
-    }
-
-    // Try to detect frameworks via JavaScript
-    try {
-      const jsFrameworks = await page.evaluate(() => {
-        const detected = [];
-        if (window.React) detected.push('React');
-        if (window.Vue) detected.push('Vue.js');
-        if (window.angular) detected.push('Angular');
-        if (window.jQuery || window.$) detected.push('jQuery');
-        return detected;
-      });
-      
-      jsFrameworks.forEach(fw => {
-        if (!frameworks.includes(fw)) {
-          frameworks.push(fw);
-        }
-      });
-    } catch (e) {
-      // Ignore JS detection errors
-    }
-
-    return frameworks;
-  }
-
-  async getPerformanceMetrics(page) {
-    try {
-      return await page.evaluate(() => {
-        const navigation = performance.getEntriesByType('navigation')[0];
-        const paint = performance.getEntriesByType('paint');
-        
-        return {
-          domContentLoaded: navigation ? navigation.domContentLoadedEventEnd - navigation.domContentLoadedEventStart : 0,
-          loadComplete: navigation ? navigation.loadEventEnd - navigation.loadEventStart : 0,
-          firstPaint: paint.find(p => p.name === 'first-paint')?.startTime || 0,
-          firstContentfulPaint: paint.find(p => p.name === 'first-contentful-paint')?.startTime || 0,
-          totalLoadTime: navigation ? navigation.loadEventEnd - navigation.navigationStart : 0
-        };
-      });
-    } catch (error) {
-      return { error: error.message };
-    }
-  }
-
-  async generateSummary() {
-    const browsers = Object.values(this.results.browsers).filter(b => !b.error);
-    
-    if (browsers.length === 0) {
-      this.results.summary = {
-        requiresJSRendering: false,
-        averageContentChange: 0,
-        frameworksDetected: [],
-        llmAccessibilityScore: 0,
-        crossBrowserConsistency: 'N/A',
-        analysisConfidence: 0,
-        error: 'All browsers failed'
-      };
-      return;
-    }
-
-    const hasSignificantChanges = browsers.some(b => b.significantChange);
-    const avgDifferencePercent = browsers.reduce((sum, b) => sum + Math.abs(b.contentDifferencePercent || 0), 0) / browsers.length;
-    
-    const allFrameworks = [...new Set(browsers.flatMap(b => b.frameworks || []))];
-    const accessibilityScore = this.calculateScore(browsers, allFrameworks, avgDifferencePercent);
-    
-    this.results.summary = {
-      requiresJSRendering: hasSignificantChanges,
-      averageContentChange: Math.round(avgDifferencePercent),
-      frameworksDetected: allFrameworks,
-      llmAccessibilityScore: accessibilityScore,
-      crossBrowserConsistency: this.calculateConsistency(browsers),
-      analysisConfidence: this.calculateConfidence(browsers),
-      totalLoadTime: Math.round(browsers.reduce((sum, b) => sum + (b.performanceMetrics?.totalLoadTime || 0), 0) / browsers.length)
-    };
-  }
-
-  calculateScore(browsers, frameworks, avgDifferencePercent) {
-    let score = 100;
-    
-    if (avgDifferencePercent > 50) score -= 40;
-    else if (avgDifferencePercent > 25) score -= 30;
-    else if (avgDifferencePercent > 10) score -= 20;
-    
-    if (frameworks.length > 0) {
-      const modernFrameworks = ['React', 'Vue.js', 'Angular', 'Next.js', 'Nuxt.js', 'Svelte'];
-      const modernCount = frameworks.filter(f => modernFrameworks.includes(f)).length;
-      score -= modernCount * 15;
-    }
-    
-    const hasSignificantChanges = browsers.some(b => b.significantChange);
-    if (hasSignificantChanges) score -= 25;
-    
-    const avgRawContent = browsers.reduce((sum, b) => sum + (b.rawContentLength || 0), 0) / browsers.length;
-    if (avgRawContent < 500) score -= 20;
-    
-    return Math.max(0, Math.min(100, Math.round(score)));
-  }
-
-  calculateConsistency(browsers) {
-    if (browsers.length < 2) return 'N/A';
-    
-    const differences = browsers.map(b => Math.abs(b.contentDifferencePercent || 0));
-    const variance = differences.reduce((sum, diff) => sum + Math.pow(diff - (differences.reduce((a, b) => a + b) / differences.length), 2), 0) / differences.length;
-    
-    return variance < 25 ? 'High' : variance < 100 ? 'Medium' : 'Low';
-  }
-
-  calculateConfidence(browsers) {
-    let confidence = 100;
-    const errorCount = browsers.filter(b => b.error).length;
-    confidence -= errorCount * 30;
-    
-    if (this.calculateConsistency(browsers) === 'Low') confidence -= 15;
-    
-    return Math.max(0, confidence);
-  }
-
-  async generateRecommendations() {
-    const { summary } = this.results;
-    const recommendations = [];
-
-    if (summary.error) {
-      recommendations.push("❌ Analysis failed - unable to determine JS dependency");
-      recommendations.push("🔧 Try manual testing or different analysis approach");
-      this.results.recommendations = recommendations;
-      return;
-    }
-
-    if (summary.llmAccessibilityScore >= 80) {
-      recommendations.push("✅ Excellent LLM accessibility - content readily available");
-    } else if (summary.llmAccessibilityScore >= 60) {
-      recommendations.push("⚠️ Good LLM accessibility - minor JS dependency");
-    } else if (summary.llmAccessibilityScore >= 40) {
-      recommendations.push("⚠️ Moderate JS dependency - test with specific LLM tools");
-    } else {
-      recommendations.push("❌ Poor LLM accessibility - heavy JS rendering required");
-    }
-
-    if (summary.requiresJSRendering) {
-      recommendations.push("🔧 Use Playwright, Puppeteer, or similar for content extraction");
-      recommendations.push("📊 Consider implementing SSR for better LLM/SEO accessibility");
-    }
-
-    if (summary.frameworksDetected.length > 0) {
-      recommendations.push(`🎯 Modern frameworks detected: ${summary.frameworksDetected.join(', ')}`);
-    }
-
-    if (summary.crossBrowserConsistency === 'Low') {
-      recommendations.push("🌐 Cross-browser testing recommended - rendering varies significantly");
-    }
-
-    if (summary.analysisConfidence < 80) {
-      recommendations.push("⚠️ Analysis confidence below 80% - results may be unreliable");
-    }
-
-    this.results.recommendations = recommendations;
-  }
-
-  async saveResults() {
-    // Save JSON report
-    const reportPath = 'analysis-report.json';
-    await fs.writeFile(reportPath, JSON.stringify(this.results, null, 2));
-    console.log(`📄 Report saved: ${reportPath}`);
-    
-    // Save human-readable summary
-    const summaryPath = 'analysis-summary.txt';
-    const summary = this.generateTextSummary();
-    await fs.writeFile(summaryPath, summary);
-    console.log(`📄 Summary saved: ${summaryPath}`);
-  }
-
-  generateTextSummary() {
-    const { summary, recommendations } = this.results;
-    
-    // Get JS content analysis from the first successful browser
-    const successfulBrowser = Object.values(this.results.browsers).find(b => b.status === 'success');
-    const jsContent = successfulBrowser?.jsRenderedContent;
-    
-    return `
-🔍 JavaScript Rendering Analysis Report
-=====================================
-
-URL: ${this.targetUrl}
-Analysis Type: ${this.analysisType}
-Timestamp: ${this.results.timestamp}
-
-📊 SUMMARY
-----------
-LLM Accessibility Score: ${summary.llmAccessibilityScore}/100
-Requires JS Rendering: ${summary.requiresJSRendering ? 'YES' : 'NO'}
-Average Content Change: ${summary.averageContentChange}%
-Frameworks Detected: ${summary.frameworksDetected.join(', ') || 'None'}
-Cross-Browser Consistency: ${summary.crossBrowserConsistency}
-Analysis Confidence: ${summary.analysisConfidence}%
-
-${jsContent ? `
-🎯 LLM-FOCUSED CONTENT ANALYSIS
-------------------------------
-${jsContent.summary || 'No additional content details available'}
-
-${jsContent.trulyMissingContent ? `
-CONTENT TRULY MISSING FROM RAW HTML:
-${jsContent.trulyMissingContent.navigation.count > 0 ? `• Navigation: ${jsContent.trulyMissingContent.navigation.count} links missing` : ''}
-${jsContent.trulyMissingContent.headings.count > 0 ? `• Headings: ${jsContent.trulyMissingContent.headings.count} headings missing` : ''}
-${jsContent.trulyMissingContent.textContent.count > 0 ? `• Text Content: ${jsContent.trulyMissingContent.textContent.count} blocks missing (~${Math.round(jsContent.trulyMissingContent.textContent.totalMissingChars/1000)}k chars)` : ''}
-${jsContent.trulyMissingContent.criticalData.count > 0 ? `• Critical Data: ${jsContent.trulyMissingContent.criticalData.count} pricing/data elements missing` : ''}
-${jsContent.trulyMissingContent.interactiveElements.count > 0 ? `• Interactive: ${jsContent.trulyMissingContent.interactiveElements.count} elements missing` : ''}
-` : ''}
-
-LLM-SPECIFIC RECOMMENDATIONS:
-${jsContent && jsContent.recommendations ? jsContent.recommendations.map(r => `• ${r}`).join('\n') : 'No specific content recommendations available'}
-` : ''}
-
-🎯 RECOMMENDATIONS
-------------------
-${recommendations.map(r => `• ${r}`).join('\n')}
-
-🌐 BROWSER RESULTS
-------------------
-${Object.entries(this.results.browsers).map(([browser, data]) => `
-${browser.toUpperCase()}:
-  Status: ${data.status || 'Unknown'}
-  Content Change: ${data.contentDifferencePercent || 0}%
-  Frameworks: ${data.frameworks?.join(', ') || 'None'}
-  Load Time: ${data.performanceMetrics?.totalLoadTime || 0}ms
-  Screenshot: ${data.screenshotPath || 'None'}
-  ${data.error ? `Error: ${data.error}` : ''}
-`).join('\n')}
-
-📈 ARTIFACTS
-------------
-GitHub Run: https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}
-Screenshots: Available in GitHub Actions artifacts
-Full Report: analysis-report.json
-    `.trim();
-  }
-
-  async updateGoogleSheet() {
-    console.log('🔍 DEBUG: Starting Google Sheet update process...');
-    console.log(`Sheet ID: ${process.env.GOOGLE_SHEET_ID || 'Missing'}`);
-    console.log(`Row Number: ${process.env.ROW_NUMBER || 'Missing'}`);
-    console.log(`Service Account: ${process.env.GOOGLE_SERVICE_ACCOUNT ? 'Present' : 'Missing'}`);
-    
-    if (!process.env.GOOGLE_SERVICE_ACCOUNT || !process.env.GOOGLE_SHEET_ID || !process.env.ROW_NUMBER) {
-      console.log('📊 Skipping Google Sheets update - missing configuration');
-      return;
-    }
-
-    try {
-      console.log('📊 Updating Google Sheet...');
-      
-      const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
-      console.log(`✅ Service account credentials parsed successfully: ${credentials.client_email}`);
-      
-      const auth = new google.auth.GoogleAuth({
-        credentials,
-        scopes: ['https://www.googleapis.com/auth/spreadsheets']
-      });
-
-      const sheets = google.sheets({ version: 'v4', auth });
-      const sheetId = process.env.GOOGLE_SHEET_ID;
-      const rowNumber = parseInt(process.env.ROW_NUMBER);
-
-      const { summary, browsers } = this.results;
-      const chromiumResults = browsers.chromium || {};
-      const jsContent = chromiumResults.jsRenderedContent || {};
-
-      // Safely handle all potential undefined values
-      const recommendations = Array.isArray(this.results.recommendations) ? this.results.recommendations : [];
-      const frameworksDetected = Array.isArray(summary.frameworksDetected) ? summary.frameworksDetected : [];
-      
-      const recommendationText = recommendations.length > 0 ? 
-        recommendations.slice(0, 2).join(' | ') : 
-        'Analysis complete';
-
-      const githubUrl = `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
-
-      // Enhanced data with LLM-focused JS content analysis
-      const missingContent = jsContent.trulyMissingContent || {};
-      const criticalMissing = (missingContent.criticalData?.count || 0) + (missingContent.headings?.count || 0);
-      const navigationMissing = missingContent.navigation?.count > 0 ? 'Yes' : 'No';
-      const headingsMissing = missingContent.headings?.count > 0 ? 'Yes' : 'No';
-      const interactiveCount = missingContent.interactiveElements?.count || 0;
-      const dataCount = missingContent.criticalData?.count || 0;
-      
-      // Determine impact level based on truly missing content
-      let impactLevel = 'Low';
-      if (criticalMissing > 3 || dataCount > 0) impactLevel = 'High';
-      else if (criticalMissing > 0 || navigationMissing === 'Yes') impactLevel = 'Medium';
-      
-      const contentExample = missingContent.headings?.examples?.[0] || 
-                           missingContent.navigation?.examples?.[0] || 
-                           missingContent.criticalData?.examples?.[0] || 'None';
-
-      const updateData = [
-        [
-          chromiumResults.rawHtmlLength || 0,
-          chromiumResults.renderedHtmlLength || 0,
-          summary.averageContentChange || 0,
-          frameworksDetected.join(', ') || 'None',
-          summary.llmAccessibilityScore || 0,
-          `Complete (${this.analysisType})`,
-          recommendationText,
-          githubUrl,
-          new Date().toISOString(),
-          // Enhanced LLM-focused JS content columns
-          jsContent.summary || 'No LLM analysis available',
-          criticalMissing,
-          navigationMissing,
-          headingsMissing,
-          interactiveCount,
-          dataCount,
-          impactLevel,
-          contentExample.substring(0, 50),
-          chromiumResults.evasionUsed || 'standard',
-          chromiumResults.status === 'protected_site' || chromiumResults.status === 'failed' ? 'Yes' : 'No',
-          summary.analysisConfidence || 100
-        ]
-      ];
-
-      console.log(`📝 Updating range B${rowNumber}:U${rowNumber} with enhanced LLM-focused data`);
-
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: sheetId,
-        range: `B${rowNumber}:U${rowNumber}`,
-        valueInputOption: 'RAW',
-        requestBody: {
-          values: updateData
-        }
-      });
-
-      console.log('✅ Google Sheet updated successfully');
-
-    } catch (error) {
-      console.error('❌ Failed to update Google Sheet:', error.message);
-      console.error('❌ Full error:', error);
-    }
-  }
-
-  async handleError(error) {
-    const errorReport = {
-      url: this.targetUrl,
-      error: error.message,
-      timestamp: new Date().toISOString(),
-      analysisType: this.analysisType
-    };
-
-    await fs.writeFile('error-report.json', JSON.stringify(errorReport, null, 2));
-    console.error('❌ Error report saved');
-  }
-
-  printSummary() {
-    const { summary } = this.results;
-    
-    console.log('\n🎯 ANALYSIS COMPLETE');
-    console.log('==================');
-    console.log(`🔗 URL: ${this.targetUrl}`);
-    console.log(`📊 LLM Score: ${summary.llmAccessibilityScore}/100`);
-    console.log(`⚡ JS Required: ${summary.requiresJSRendering ? 'YES' : 'NO'}`);
-    console.log(`🎭 Frameworks: ${summary.frameworksDetected.join(', ') || 'None'}`);
-    console.log(`🌐 Consistency: ${summary.crossBrowserConsistency}`);
-    console.log(`📈 Confidence: ${summary.analysisConfidence}%`);
-    console.log(`🔗 GitHub Run: https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`);
-  }
-}
-
-// Run the analysis with timeout protection
-if (require.main === module) {
-  console.log('🚀 Starting analyzer script...');
-  console.log('📋 Environment check:');
-  console.log(`  TARGET_URL: ${process.env.TARGET_URL || 'MISSING'}`);
-  console.log(`  ANALYSIS_TYPE: ${process.env.ANALYSIS_TYPE || 'full (default)'}`);
-  console.log(`  NODE_VERSION: ${process.version}`);
-  
-  // Add a global timeout to prevent hanging
-  const GLOBAL_TIMEOUT = 10 * 60 * 1000; // 10 minutes
-  const timeout = setTimeout(() => {
-    console.error('❌ GLOBAL TIMEOUT: Analysis took longer than 10 minutes');
-    process.exit(1);
-  }, GLOBAL_TIMEOUT);
-  
-  const analyzer = new AdvancedJSAnalyzer();
-  analyzer.analyze()
-    .then(() => {
-      clearTimeout(timeout);
-      console.log('🎉 Analysis completed successfully!');
-      process.exit(0);
-    })
-    .catch(error => {
-      clearTimeout(timeout);
-      console.error('❌ FATAL ERROR:', error);
-      console.error('❌ Stack trace:', error.stack);
-      console.error('❌ Error details:', {
-        message: error.message,
-        name: error.name,
-        code: error.code
-      });
-      process.exit(1);
-    });
-}
-
-module.exports = AdvancedJSAnalyzer;const { chromium, firefox, webkit } = require('playwright');
+const { chromium, firefox, webkit } = require('playwright');
 const { google } = require('googleapis');
 const fs = require('fs').promises;
 
@@ -1542,4 +771,775 @@ class AdvancedJSAnalyzer {
           totalVisibleElements: document.querySelectorAll('*').length,
           visibleTextElements: document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, div').length,
           visibleNavElements: document.querySelectorAll('nav, .nav, .navigation, .menu, header a').length,
-          visibleHeadings: Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6')).map(h => h.innerText?.trim()).slice
+          visibleHeadings: Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6')).map(h => h.innerText?.trim()).slice(0, 5),
+          visibleNavText: Array.from(document.querySelectorAll('nav a, .nav a, .navigation a, .menu a, header a')).map(a => a.innerText?.trim()).slice(0, 5),
+          visiblePrices: Array.from(document.querySelectorAll('[class*="price"], [class*="cost"], .currency, [data-price]')).map(p => p.innerText?.trim()).slice(0, 5),
+          bodyStructure: {
+            mainElements: document.querySelectorAll('main').length,
+            articles: document.querySelectorAll('article').length,
+            sections: document.querySelectorAll('section').length,
+            contentDivs: document.querySelectorAll('.content, [class*="content"]').length
+          }
+        };
+        return debug;
+      }, rawText);
+      
+      console.log(`  🔍 DEBUG INFO:`);
+      console.log(`    Total visible elements: ${contentSamples.totalVisibleElements}`);
+      console.log(`    Visible text elements: ${contentSamples.visibleTextElements}`);
+      console.log(`    Visible nav elements: ${contentSamples.visibleNavElements}`);
+      console.log(`    Visible headings: ${JSON.stringify(contentSamples.visibleHeadings)}`);
+      console.log(`    Visible nav text: ${JSON.stringify(contentSamples.visibleNavText)}`);
+      console.log(`    Body structure: ${JSON.stringify(contentSamples.bodyStructure)}`);
+      console.log(`    Raw text sample: "${contentSamples.rawTextSample.substring(0, 200)}..."`);
+      console.log(`    Rendered text sample: "${contentSamples.renderedTextSample.substring(0, 200)}..."`);
+      
+      // Get content that's actually missing from raw HTML (not just hidden by CSS)
+      const trulyMissingContent = await page.evaluate((contentData) => {
+        const { rawHtmlContent, rawTextContent } = contentData;
+        const missing = {
+          navigation: { missingLinks: [], missingText: [] },
+          headings: { missingHeadings: [] },
+          textContent: { missingParagraphs: [], significantTextBlocks: [] },
+          interactiveElements: { missingButtons: [], missingForms: [] },
+          criticalData: { missingPrices: [], missingContent: [] },
+          debugInfo: {
+            rawHtmlLength: rawHtmlContent.length,
+            rawTextLength: rawTextContent.length,
+            renderedTextLength: document.body?.innerText?.length || 0,
+            searchExamples: []
+          }
+        };
+
+        // DEBUG: Check navigation - with detailed logging
+        const visibleNavLinks = document.querySelectorAll('nav a, .nav a, .navigation a, .menu a, header a');
+        console.log(`DEBUG: Found ${visibleNavLinks.length} visible nav links`);
+        
+        Array.from(visibleNavLinks).forEach((link, index) => {
+          const linkText = link.innerText?.trim();
+          const href = link.href;
+          if (linkText && linkText.length > 2) {
+            const searchText = linkText.toLowerCase().substring(0, 15);
+            const foundInRawHtml = rawHtmlContent.toLowerCase().includes(searchText);
+            const foundInRawText = rawTextContent.toLowerCase().includes(searchText);
+            
+            console.log(`DEBUG Nav ${index}: "${linkText}" -> HTML: ${foundInRawHtml}, Text: ${foundInRawText}`);
+            missing.debugInfo.searchExamples.push(`Nav "${linkText}": HTML=${foundInRawHtml}, Text=${foundInRawText}`);
+            
+            if (!foundInRawHtml && !foundInRawText) {
+              missing.navigation.missingLinks.push(linkText.substring(0, 30));
+            }
+          }
+        });
+
+        // DEBUG: Check headings - with detailed logging
+        const visibleHeadings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+        console.log(`DEBUG: Found ${visibleHeadings.length} visible headings`);
+        
+        Array.from(visibleHeadings).forEach((heading, index) => {
+          const headingText = heading.innerText?.trim();
+          if (headingText && headingText.length > 3) {
+            const searchText = headingText.toLowerCase().substring(0, 20);
+            const foundInRawHtml = rawHtmlContent.toLowerCase().includes(searchText);
+            const foundInRawText = rawTextContent.toLowerCase().includes(searchText);
+            
+            console.log(`DEBUG Heading ${index}: "${headingText}" -> HTML: ${foundInRawHtml}, Text: ${foundInRawText}`);
+            missing.debugInfo.searchExamples.push(`Heading "${headingText}": HTML=${foundInRawHtml}, Text=${foundInRawText}`);
+            
+            if (!foundInRawHtml && !foundInRawText) {
+              missing.headings.missingHeadings.push(headingText.substring(0, 60));
+            }
+          }
+        });
+
+        // DEBUG: Check for significant text differences
+        const renderedBodyText = document.body?.innerText || '';
+        const textDifference = renderedBodyText.length - rawTextContent.length;
+        console.log(`DEBUG: Text difference: ${textDifference} characters`);
+        
+        // Sample random sections of rendered text to see if they exist in raw
+        const renderedSections = [];
+        for (let i = 0; i < Math.min(5, Math.floor(renderedBodyText.length / 1000)); i++) {
+          const start = i * 1000;
+          const sample = renderedBodyText.substring(start, start + 100).trim();
+          if (sample.length > 20) {
+            const foundInRaw = rawTextContent.toLowerCase().includes(sample.toLowerCase().substring(0, 50));
+            renderedSections.push({ sample, foundInRaw });
+            console.log(`DEBUG Text Section ${i}: "${sample.substring(0, 50)}..." -> Found in raw: ${foundInRaw}`);
+          }
+        }
+        
+        missing.debugInfo.renderedSections = renderedSections;
+
+        // Check for missing interactive elements (buttons with meaningful text)
+        const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"], .btn');
+        console.log(`DEBUG: Found ${buttons.length} buttons`);
+        
+        Array.from(buttons).slice(0, 10).forEach((button, index) => {
+          const buttonText = button.innerText?.trim() || button.value?.trim();
+          if (buttonText && buttonText.length > 2) {
+            const foundInRaw = rawHtmlContent.toLowerCase().includes(buttonText.toLowerCase());
+            console.log(`DEBUG Button ${index}: "${buttonText}" -> Found in raw: ${foundInRaw}`);
+            
+            if (!foundInRaw) {
+              missing.interactiveElements.missingButtons.push(buttonText.substring(0, 30));
+            }
+          }
+        });
+
+        // Check for missing pricing/data content
+        const priceElements = document.querySelectorAll('[class*="price"], [class*="cost"], .currency, [data-price]');
+        console.log(`DEBUG: Found ${priceElements.length} price elements`);
+        
+        Array.from(priceElements).slice(0, 10).forEach((el, index) => {
+          const priceText = el.innerText?.trim();
+          if (priceText && /[\$£€¥₹]|\d+\.\d{2}/.test(priceText)) {
+            const foundInRaw = rawHtmlContent.toLowerCase().includes(priceText.toLowerCase());
+            console.log(`DEBUG Price ${index}: "${priceText}" -> Found in raw: ${foundInRaw}`);
+            
+            if (!foundInRaw) {
+              missing.criticalData.missingPrices.push(priceText.substring(0, 20));
+            }
+          }
+        });
+
+        return {
+          navigation: {
+            count: missing.navigation.missingLinks.length,
+            examples: missing.navigation.missingLinks.slice(0, 3)
+          },
+          headings: {
+            count: missing.headings.missingHeadings.length,
+            examples: missing.headings.missingHeadings.slice(0, 3)
+          },
+          textContent: {
+            count: missing.textContent.missingParagraphs.length,
+            totalMissingChars: missing.textContent.missingParagraphs.reduce((sum, p) => sum + p.length, 0),
+            examples: missing.textContent.missingParagraphs.slice(0, 2).map(p => p.preview)
+          },
+          interactiveElements: {
+            count: missing.interactiveElements.missingButtons.length,
+            examples: missing.interactiveElements.missingButtons.slice(0, 3)
+          },
+          criticalData: {
+            count: missing.criticalData.missingPrices.length,
+            examples: missing.criticalData.missingPrices.slice(0, 3)
+          },
+          debugInfo: missing.debugInfo
+        };
+      }, { rawHtmlContent: rawHtml, rawTextContent: rawText });
+
+      console.log(`  ✅ True missing content analysis completed`);
+      console.log(`  📊 Missing navigation: ${trulyMissingContent.navigation.count}`);
+      console.log(`  📊 Missing headings: ${trulyMissingContent.headings.count}`);
+      console.log(`  📊 Missing text content: ${trulyMissingContent.textContent.count}`);
+      console.log(`  📊 Missing interactive: ${trulyMissingContent.interactiveElements.count}`);
+      console.log(`  📊 Missing critical data: ${trulyMissingContent.criticalData.count}`);
+      console.log(`  🔍 Debug search examples: ${JSON.stringify(trulyMissingContent.debugInfo.searchExamples.slice(0, 3))}`);
+
+      return {
+        summary: this.generateLLMFocusedSummary(trulyMissingContent),
+        trulyMissingContent: trulyMissingContent,
+        recommendations: this.generateLLMFocusedRecommendations(trulyMissingContent)
+      };
+
+    } catch (error) {
+      console.error(`  ❌ LLM-focused content analysis failed: ${error.message}`);
+      console.error(`  ❌ Stack trace: ${error.stack}`);
+      return {
+        error: error.message,
+        summary: 'Unable to analyze LLM-accessible content',
+        recommendations: ['Manual content inspection required']
+      };
+    }
+  }
+
+  generateLLMFocusedSummary(missingContent) {
+    // Generate the technical summary
+    const issues = [];
+    
+    if (missingContent.navigation.count > 0) {
+      issues.push(`${missingContent.navigation.count} navigation links truly missing from HTML`);
+    }
+    
+    if (missingContent.headings.count > 0) {
+      issues.push(`${missingContent.headings.count} headings not in raw HTML`);
+    }
+    
+    if (missingContent.textContent.count > 0) {
+      const totalChars = missingContent.textContent.totalMissingChars;
+      issues.push(`${missingContent.textContent.count} text blocks missing (~${Math.round(totalChars/1000)}k chars)`);
+    }
+    
+    if (missingContent.interactiveElements.count > 0) {
+      issues.push(`${missingContent.interactiveElements.count} interactive elements missing`);
+    }
+    
+    if (missingContent.criticalData.count > 0) {
+      issues.push(`${missingContent.criticalData.count} pricing/data elements missing`);
+    }
+    
+    // Generate the plain-language "Bottom Line" summary
+    const bottomLine = this.generateBottomLineSummary(missingContent);
+    
+    if (issues.length === 0) {
+      return 'Content appears accessible to LLMs - no significant missing elements detected';
+    }
+    
+    const examples = [];
+    if (missingContent.navigation.examples.length > 0) {
+      examples.push(`Nav: "${missingContent.navigation.examples[0]}"`);
+    }
+    if (missingContent.headings.examples.length > 0) {
+      examples.push(`Heading: "${missingContent.headings.examples[0]}"`);
+    }
+    if (missingContent.criticalData.examples.length > 0) {
+      examples.push(`Price: "${missingContent.criticalData.examples[0]}"`);
+    }
+    
+    const exampleText = examples.length > 0 ? ` (e.g., ${examples.slice(0, 2).join(', ')})` : '';
+    const technicalSummary = `LLM Impact: ${issues.join(' | ')}${exampleText}`;
+    
+    // Combine technical and plain-language summaries
+    return `${technicalSummary} | BOTTOM LINE: ${bottomLine}`;
+  }
+
+  generateBottomLineSummary(missingContent) {
+    const willMiss = [];
+    const willStillGet = [];
+    
+    // What LLMs will miss
+    if (missingContent.criticalData.count > 0) {
+      willMiss.push(`actual prices/costs (${missingContent.criticalData.count} missing - CRITICAL)`);
+    }
+    
+    if (missingContent.headings.count > 0) {
+      willMiss.push(`page structure/headings (${missingContent.headings.count} missing)`);
+    }
+    
+    if (missingContent.navigation.count > 0) {
+      willMiss.push(`some navigation options (${missingContent.navigation.count} links)`);
+    }
+    
+    if (missingContent.textContent.totalMissingChars > 5000) {
+      willMiss.push(`significant content blocks (~${Math.round(missingContent.textContent.totalMissingChars/1000)}k characters)`);
+    }
+    
+    if (missingContent.interactiveElements.count > 0) {
+      willMiss.push(`interactive functionality (${missingContent.interactiveElements.count} elements - not critical for content)`);
+    }
+    
+    // What LLMs will still get (based on what's NOT missing)
+    if (missingContent.headings.count === 0) {
+      willStillGet.push('page structure and headings');
+    }
+    
+    if (missingContent.textContent.totalMissingChars < 2000) {
+      willStillGet.push('most descriptive text');
+    }
+    
+    if (missingContent.criticalData.count === 0) {
+      willStillGet.push('pricing and key data');
+    }
+    
+    if (missingContent.navigation.count <= 2) {
+      willStillGet.push('main navigation');
+    }
+    
+    // Always add these likely positives
+    willStillGet.push('basic page information');
+    if (missingContent.textContent.count < 3) {
+      willStillGet.push('general content');
+    }
+    
+    // Format the bottom line
+    let summary = '';
+    
+    if (willMiss.length === 0) {
+      summary = 'LLMs can access virtually all content without JavaScript';
+    } else {
+      summary = `LLMs will miss: ${willMiss.join(', ')}`;
+      
+      if (willStillGet.length > 0) {
+        summary += ` | BUT will still get: ${willStillGet.join(', ')}`;
+      }
+    }
+    
+    return summary;
+  }
+
+  generateLLMFocusedRecommendations(missingContent) {
+    const recommendations = [];
+    const totalIssues = missingContent.navigation.count + missingContent.headings.count + 
+                       missingContent.textContent.count + missingContent.interactiveElements.count + 
+                       missingContent.criticalData.count;
+    
+    if (totalIssues === 0) {
+      recommendations.push('✅ Excellent LLM accessibility - all content available in raw HTML');
+      recommendations.push('🤖 LLMs can access this content without JavaScript rendering');
+      return recommendations;
+    }
+    
+    if (missingContent.criticalData.count > 0) {
+      recommendations.push(`💰 CRITICAL: ${missingContent.criticalData.count} pricing/data elements require JavaScript - essential for analysis`);
+    }
+    
+    if (missingContent.headings.count > 0) {
+      recommendations.push(`📝 HIGH: ${missingContent.headings.count} headings missing from raw HTML - affects content structure understanding`);
+    }
+    
+    if (missingContent.navigation.count > 0) {
+      recommendations.push(`🧭 MEDIUM: ${missingContent.navigation.count} navigation links require JavaScript - impacts site discovery`);
+    }
+    
+    if (missingContent.textContent.count > 0) {
+      const chars = missingContent.textContent.totalMissingChars;
+      recommendations.push(`📄 MEDIUM: ${Math.round(chars/1000)}k characters of content missing - significant for comprehensive analysis`);
+    }
+    
+    if (missingContent.interactiveElements.count > 0) {
+      recommendations.push(`🔧 LOW: ${missingContent.interactiveElements.count} interactive elements require JavaScript - functional but not content-critical`);
+    }
+    
+    // Overall recommendation
+    if (totalIssues > 5) {
+      recommendations.push('🚨 RECOMMENDATION: JavaScript rendering essential for LLM access - use Playwright/Puppeteer');
+    } else if (totalIssues > 2) {
+      recommendations.push('⚠️ RECOMMENDATION: Consider JavaScript rendering for complete content access');
+    } else {
+      recommendations.push('✅ RECOMMENDATION: Most content accessible without JavaScript rendering');
+    }
+    
+    return recommendations;
+  }
+
+  cleanHtml(html) {
+    return html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  async detectFrameworks(html, page) {
+    const frameworks = [];
+    const patterns = {
+      'React': [/react/i, /_reactInternalFiber/i, /data-reactroot/i, /__webpack_require__/],
+      'Vue.js': [/vue(?:\.js)?/i, /data-v-[a-f0-9]/i, /\[data-v-/i],
+      'Angular': [/angular/i, /ng-version/i, /ng-app/i, /\[ng-/i],
+      'Next.js': [/__NEXT_DATA__/i, /_next\/static/i, /next\.js/i],
+      'Nuxt.js': [/__NUXT__/i, /_nuxt\//i],
+      'Svelte': [/svelte/i, /s-[A-Za-z0-9]/],
+      'Alpine.js': [/x-data/i, /alpine/i],
+      'jQuery': [/jquery/i, /\$\(/]
+    };
+
+    for (const [name, regexes] of Object.entries(patterns)) {
+      if (regexes.some(regex => regex.test(html))) {
+        frameworks.push(name);
+      }
+    }
+
+    // Try to detect frameworks via JavaScript
+    try {
+      const jsFrameworks = await page.evaluate(() => {
+        const detected = [];
+        if (window.React) detected.push('React');
+        if (window.Vue) detected.push('Vue.js');
+        if (window.angular) detected.push('Angular');
+        if (window.jQuery || window.$) detected.push('jQuery');
+        return detected;
+      });
+      
+      jsFrameworks.forEach(fw => {
+        if (!frameworks.includes(fw)) {
+          frameworks.push(fw);
+        }
+      });
+    } catch (e) {
+      // Ignore JS detection errors
+    }
+
+    return frameworks;
+  }
+
+  async getPerformanceMetrics(page) {
+    try {
+      return await page.evaluate(() => {
+        const navigation = performance.getEntriesByType('navigation')[0];
+        const paint = performance.getEntriesByType('paint');
+        
+        return {
+          domContentLoaded: navigation ? navigation.domContentLoadedEventEnd - navigation.domContentLoadedEventStart : 0,
+          loadComplete: navigation ? navigation.loadEventEnd - navigation.loadEventStart : 0,
+          firstPaint: paint.find(p => p.name === 'first-paint')?.startTime || 0,
+          firstContentfulPaint: paint.find(p => p.name === 'first-contentful-paint')?.startTime || 0,
+          totalLoadTime: navigation ? navigation.loadEventEnd - navigation.navigationStart : 0
+        };
+      });
+    } catch (error) {
+      return { error: error.message };
+    }
+  }
+
+  async generateSummary() {
+    const browsers = Object.values(this.results.browsers).filter(b => !b.error);
+    
+    if (browsers.length === 0) {
+      this.results.summary = {
+        requiresJSRendering: false,
+        averageContentChange: 0,
+        frameworksDetected: [],
+        llmAccessibilityScore: 0,
+        crossBrowserConsistency: 'N/A',
+        analysisConfidence: 0,
+        error: 'All browsers failed'
+      };
+      return;
+    }
+
+    const hasSignificantChanges = browsers.some(b => b.significantChange);
+    const avgDifferencePercent = browsers.reduce((sum, b) => sum + Math.abs(b.contentDifferencePercent || 0), 0) / browsers.length;
+    
+    const allFrameworks = [...new Set(browsers.flatMap(b => b.frameworks || []))];
+    const accessibilityScore = this.calculateScore(browsers, allFrameworks, avgDifferencePercent);
+    
+    this.results.summary = {
+      requiresJSRendering: hasSignificantChanges,
+      averageContentChange: Math.round(avgDifferencePercent),
+      frameworksDetected: allFrameworks,
+      llmAccessibilityScore: accessibilityScore,
+      crossBrowserConsistency: this.calculateConsistency(browsers),
+      analysisConfidence: this.calculateConfidence(browsers),
+      totalLoadTime: Math.round(browsers.reduce((sum, b) => sum + (b.performanceMetrics?.totalLoadTime || 0), 0) / browsers.length)
+    };
+  }
+
+  calculateScore(browsers, frameworks, avgDifferencePercent) {
+    let score = 100;
+    
+    if (avgDifferencePercent > 50) score -= 40;
+    else if (avgDifferencePercent > 25) score -= 30;
+    else if (avgDifferencePercent > 10) score -= 20;
+    
+    if (frameworks.length > 0) {
+      const modernFrameworks = ['React', 'Vue.js', 'Angular', 'Next.js', 'Nuxt.js', 'Svelte'];
+      const modernCount = frameworks.filter(f => modernFrameworks.includes(f)).length;
+      score -= modernCount * 15;
+    }
+    
+    const hasSignificantChanges = browsers.some(b => b.significantChange);
+    if (hasSignificantChanges) score -= 25;
+    
+    const avgRawContent = browsers.reduce((sum, b) => sum + (b.rawContentLength || 0), 0) / browsers.length;
+    if (avgRawContent < 500) score -= 20;
+    
+    return Math.max(0, Math.min(100, Math.round(score)));
+  }
+
+  calculateConsistency(browsers) {
+    if (browsers.length < 2) return 'N/A';
+    
+    const differences = browsers.map(b => Math.abs(b.contentDifferencePercent || 0));
+    const variance = differences.reduce((sum, diff) => sum + Math.pow(diff - (differences.reduce((a, b) => a + b) / differences.length), 2), 0) / differences.length;
+    
+    return variance < 25 ? 'High' : variance < 100 ? 'Medium' : 'Low';
+  }
+
+  calculateConfidence(browsers) {
+    let confidence = 100;
+    const errorCount = browsers.filter(b => b.error).length;
+    confidence -= errorCount * 30;
+    
+    if (this.calculateConsistency(browsers) === 'Low') confidence -= 15;
+    
+    return Math.max(0, confidence);
+  }
+
+  async generateRecommendations() {
+    const { summary } = this.results;
+    const recommendations = [];
+
+    if (summary.error) {
+      recommendations.push("❌ Analysis failed - unable to determine JS dependency");
+      recommendations.push("🔧 Try manual testing or different analysis approach");
+      this.results.recommendations = recommendations;
+      return;
+    }
+
+    if (summary.llmAccessibilityScore >= 80) {
+      recommendations.push("✅ Excellent LLM accessibility - content readily available");
+    } else if (summary.llmAccessibilityScore >= 60) {
+      recommendations.push("⚠️ Good LLM accessibility - minor JS dependency");
+    } else if (summary.llmAccessibilityScore >= 40) {
+      recommendations.push("⚠️ Moderate JS dependency - test with specific LLM tools");
+    } else {
+      recommendations.push("❌ Poor LLM accessibility - heavy JS rendering required");
+    }
+
+    if (summary.requiresJSRendering) {
+      recommendations.push("🔧 Use Playwright, Puppeteer, or similar for content extraction");
+      recommendations.push("📊 Consider implementing SSR for better LLM/SEO accessibility");
+    }
+
+    if (summary.frameworksDetected.length > 0) {
+      recommendations.push(`🎯 Modern frameworks detected: ${summary.frameworksDetected.join(', ')}`);
+    }
+
+    if (summary.crossBrowserConsistency === 'Low') {
+      recommendations.push("🌐 Cross-browser testing recommended - rendering varies significantly");
+    }
+
+    if (summary.analysisConfidence < 80) {
+      recommendations.push("⚠️ Analysis confidence below 80% - results may be unreliable");
+    }
+
+    this.results.recommendations = recommendations;
+  }
+
+  async saveResults() {
+    // Save JSON report
+    const reportPath = 'analysis-report.json';
+    await fs.writeFile(reportPath, JSON.stringify(this.results, null, 2));
+    console.log(`📄 Report saved: ${reportPath}`);
+    
+    // Save human-readable summary
+    const summaryPath = 'analysis-summary.txt';
+    const summary = this.generateTextSummary();
+    await fs.writeFile(summaryPath, summary);
+    console.log(`📄 Summary saved: ${summaryPath}`);
+  }
+
+  generateTextSummary() {
+    const { summary, recommendations } = this.results;
+    
+    // Get JS content analysis from the first successful browser
+    const successfulBrowser = Object.values(this.results.browsers).find(b => b.status === 'success');
+    const jsContent = successfulBrowser?.jsRenderedContent;
+    
+    return `
+🔍 JavaScript Rendering Analysis Report
+=====================================
+
+URL: ${this.targetUrl}
+Analysis Type: ${this.analysisType}
+Timestamp: ${this.results.timestamp}
+
+📊 SUMMARY
+----------
+LLM Accessibility Score: ${summary.llmAccessibilityScore}/100
+Requires JS Rendering: ${summary.requiresJSRendering ? 'YES' : 'NO'}
+Average Content Change: ${summary.averageContentChange}%
+Frameworks Detected: ${summary.frameworksDetected.join(', ') || 'None'}
+Cross-Browser Consistency: ${summary.crossBrowserConsistency}
+Analysis Confidence: ${summary.analysisConfidence}%
+
+${jsContent ? `
+🎯 LLM-FOCUSED CONTENT ANALYSIS
+------------------------------
+${jsContent.summary || 'No additional content details available'}
+
+${jsContent.trulyMissingContent ? `
+CONTENT TRULY MISSING FROM RAW HTML:
+${jsContent.trulyMissingContent.navigation.count > 0 ? `• Navigation: ${jsContent.trulyMissingContent.navigation.count} links missing` : ''}
+${jsContent.trulyMissingContent.headings.count > 0 ? `• Headings: ${jsContent.trulyMissingContent.headings.count} headings missing` : ''}
+${jsContent.trulyMissingContent.textContent.count > 0 ? `• Text Content: ${jsContent.trulyMissingContent.textContent.count} blocks missing (~${Math.round(jsContent.trulyMissingContent.textContent.totalMissingChars/1000)}k chars)` : ''}
+${jsContent.trulyMissingContent.criticalData.count > 0 ? `• Critical Data: ${jsContent.trulyMissingContent.criticalData.count} pricing/data elements missing` : ''}
+${jsContent.trulyMissingContent.interactiveElements.count > 0 ? `• Interactive: ${jsContent.trulyMissingContent.interactiveElements.count} elements missing` : ''}
+` : ''}
+
+LLM-SPECIFIC RECOMMENDATIONS:
+${jsContent && jsContent.recommendations ? jsContent.recommendations.map(r => `• ${r}`).join('\n') : 'No specific content recommendations available'}
+` : ''}
+
+🎯 RECOMMENDATIONS
+------------------
+${recommendations.map(r => `• ${r}`).join('\n')}
+
+🌐 BROWSER RESULTS
+------------------
+${Object.entries(this.results.browsers).map(([browser, data]) => `
+${browser.toUpperCase()}:
+  Status: ${data.status || 'Unknown'}
+  Content Change: ${data.contentDifferencePercent || 0}%
+  Frameworks: ${data.frameworks?.join(', ') || 'None'}
+  Load Time: ${data.performanceMetrics?.totalLoadTime || 0}ms
+  Screenshot: ${data.screenshotPath || 'None'}
+  ${data.error ? `Error: ${data.error}` : ''}
+`).join('\n')}
+
+📈 ARTIFACTS
+------------
+GitHub Run: https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}
+Screenshots: Available in GitHub Actions artifacts
+Full Report: analysis-report.json
+    `.trim();
+  }
+
+  async updateGoogleSheet() {
+    console.log('🔍 DEBUG: Starting Google Sheet update process...');
+    console.log(`Sheet ID: ${process.env.GOOGLE_SHEET_ID || 'Missing'}`);
+    console.log(`Row Number: ${process.env.ROW_NUMBER || 'Missing'}`);
+    console.log(`Service Account: ${process.env.GOOGLE_SERVICE_ACCOUNT ? 'Present' : 'Missing'}`);
+    
+    if (!process.env.GOOGLE_SERVICE_ACCOUNT || !process.env.GOOGLE_SHEET_ID || !process.env.ROW_NUMBER) {
+      console.log('📊 Skipping Google Sheets update - missing configuration');
+      return;
+    }
+
+    try {
+      console.log('📊 Updating Google Sheet...');
+      
+      const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
+      console.log(`✅ Service account credentials parsed successfully: ${credentials.client_email}`);
+      
+      const auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+      });
+
+      const sheets = google.sheets({ version: 'v4', auth });
+      const sheetId = process.env.GOOGLE_SHEET_ID;
+      const rowNumber = parseInt(process.env.ROW_NUMBER);
+
+      const { summary, browsers } = this.results;
+      const chromiumResults = browsers.chromium || {};
+      const jsContent = chromiumResults.jsRenderedContent || {};
+
+      // Safely handle all potential undefined values
+      const recommendations = Array.isArray(this.results.recommendations) ? this.results.recommendations : [];
+      const frameworksDetected = Array.isArray(summary.frameworksDetected) ? summary.frameworksDetected : [];
+      
+      const recommendationText = recommendations.length > 0 ? 
+        recommendations.slice(0, 2).join(' | ') : 
+        'Analysis complete';
+
+      const githubUrl = `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+
+      // Enhanced data with LLM-focused JS content analysis
+      const missingContent = jsContent.trulyMissingContent || {};
+      const criticalMissing = (missingContent.criticalData?.count || 0) + (missingContent.headings?.count || 0);
+      const navigationMissing = missingContent.navigation?.count > 0 ? 'Yes' : 'No';
+      const headingsMissing = missingContent.headings?.count > 0 ? 'Yes' : 'No';
+      const interactiveCount = missingContent.interactiveElements?.count || 0;
+      const dataCount = missingContent.criticalData?.count || 0;
+      
+      // Determine impact level based on truly missing content
+      let impactLevel = 'Low';
+      if (criticalMissing > 3 || dataCount > 0) impactLevel = 'High';
+      else if (criticalMissing > 0 || navigationMissing === 'Yes') impactLevel = 'Medium';
+      
+      const contentExample = missingContent.headings?.examples?.[0] || 
+                           missingContent.navigation?.examples?.[0] || 
+                           missingContent.criticalData?.examples?.[0] || 'None';
+
+      const updateData = [
+        [
+          chromiumResults.rawHtmlLength || 0,
+          chromiumResults.renderedHtmlLength || 0,
+          summary.averageContentChange || 0,
+          frameworksDetected.join(', ') || 'None',
+          summary.llmAccessibilityScore || 0,
+          `Complete (${this.analysisType})`,
+          recommendationText,
+          githubUrl,
+          new Date().toISOString(),
+          // Enhanced LLM-focused JS content columns
+          jsContent.summary || 'No LLM analysis available',
+          criticalMissing,
+          navigationMissing,
+          headingsMissing,
+          interactiveCount,
+          dataCount,
+          impactLevel,
+          contentExample.substring(0, 50),
+          chromiumResults.evasionUsed || 'standard',
+          chromiumResults.status === 'protected_site' || chromiumResults.status === 'failed' ? 'Yes' : 'No',
+          summary.analysisConfidence || 100
+        ]
+      ];
+
+      console.log(`📝 Updating range B${rowNumber}:U${rowNumber} with enhanced LLM-focused data`);
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: sheetId,
+        range: `B${rowNumber}:U${rowNumber}`,
+        valueInputOption: 'RAW',
+        requestBody: {
+          values: updateData
+        }
+      });
+
+      console.log('✅ Google Sheet updated successfully');
+
+    } catch (error) {
+      console.error('❌ Failed to update Google Sheet:', error.message);
+      console.error('❌ Full error:', error);
+    }
+  }
+
+  async handleError(error) {
+    const errorReport = {
+      url: this.targetUrl,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+      analysisType: this.analysisType
+    };
+
+    await fs.writeFile('error-report.json', JSON.stringify(errorReport, null, 2));
+    console.error('❌ Error report saved');
+  }
+
+  printSummary() {
+    const { summary } = this.results;
+    
+    console.log('\n🎯 ANALYSIS COMPLETE');
+    console.log('==================');
+    console.log(`🔗 URL: ${this.targetUrl}`);
+    console.log(`📊 LLM Score: ${summary.llmAccessibilityScore}/100`);
+    console.log(`⚡ JS Required: ${summary.requiresJSRendering ? 'YES' : 'NO'}`);
+    console.log(`🎭 Frameworks: ${summary.frameworksDetected.join(', ') || 'None'}`);
+    console.log(`🌐 Consistency: ${summary.crossBrowserConsistency}`);
+    console.log(`📈 Confidence: ${summary.analysisConfidence}%`);
+    console.log(`🔗 GitHub Run: https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`);
+  }
+}
+
+// Run the analysis with timeout protection
+if (require.main === module) {
+  console.log('🚀 Starting analyzer script...');
+  console.log('📋 Environment check:');
+  console.log(`  TARGET_URL: ${process.env.TARGET_URL || 'MISSING'}`);
+  console.log(`  ANALYSIS_TYPE: ${process.env.ANALYSIS_TYPE || 'full (default)'}`);
+  console.log(`  NODE_VERSION: ${process.version}`);
+  
+  // Add a global timeout to prevent hanging
+  const GLOBAL_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+  const timeout = setTimeout(() => {
+    console.error('❌ GLOBAL TIMEOUT: Analysis took longer than 10 minutes');
+    process.exit(1);
+  }, GLOBAL_TIMEOUT);
+  
+  const analyzer = new AdvancedJSAnalyzer();
+  analyzer.analyze()
+    .then(() => {
+      clearTimeout(timeout);
+      console.log('🎉 Analysis completed successfully!');
+      process.exit(0);
+    })
+    .catch(error => {
+      clearTimeout(timeout);
+      console.error('❌ FATAL ERROR:', error);
+      console.error('❌ Stack trace:', error.stack);
+      console.error('❌ Error details:', {
+        message: error.message,
+        name: error.name,
+        code: error.code
+      });
+      process.exit(1);
+    });
+}
+
+module.exports = AdvancedJSAnalyzer;
